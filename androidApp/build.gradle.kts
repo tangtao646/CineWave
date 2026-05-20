@@ -1,23 +1,36 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.androidApplication)
+    alias(libs.plugins.kotlinAndroid) // 必须应用此插件才能编译 Kotlin 源码 (MainActivity.kt)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
 }
 
-kotlin {
-    compilerOptions {
-        jvmTarget = JvmTarget.JVM_11
-    }
-}
 dependencies {
     implementation(projects.shared)
 
     implementation(libs.androidx.activity.compose)
 
     implementation(libs.compose.uiToolingPreview)
+    implementation(libs.androidx.core.ktx)
     debugImplementation(libs.compose.uiTooling)
+
+    // Koin
+    implementation(libs.koin.core)
+    implementation(libs.koin.android)
+    implementation(libs.koin.compose)
+
+    // Media3 (Android 视频播放)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.media3.datasource.okhttp)
+    implementation(libs.androidx.media3.ui)
+
+    // Guava (ListenableFuture)
+    implementation(libs.guava.android)
 }
 
 android {
@@ -44,5 +57,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+    // 强制 JVM 目标版本为 11，与 Java 保持一致，防止 JVM Target 冲突
+    tasks.withType<KotlinJvmCompile>().configureEach {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_11)
+        }
     }
 }

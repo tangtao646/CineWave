@@ -1,0 +1,268 @@
+package com.example.kmp_demo.core.player.cache
+
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import okio.FileSystem
+import okio.Path
+import okio.Path.Companion.toPath
+import okio.Sink
+import okio.Source
+
+/**
+ * 基于文件系统的 LRU 磁盘缓存。
+ *
+ * 设计要点：
+ * - 最大容量 5GB，适用于影音切片缓存
+ * - 使用文件最后修改时间（lastModifiedAtMillis）实现 LRU 淘汰
+ * - 线程安全（Mutex 保护）
+ * - 缓存目录由外部指定，用户可手动清理
+ * - 使用 okio.FileSystem.atomicMove() 进行原子写入，避免写入中断导致文件损坏
+ * - 惰性淘汰 + 定期检查（S5 优化），避免每次写入 O(n log n) 排序
+ * - 流式读写支持：getSource() / putStream() 避免大文件 OOM
+ *
+ * @param cacheDir 缓存目录路径（如 /data/data/.../cache/video_cache/）
+ * @param maxSizeBytes 最大缓存大小，默认 5GB
+ * @param fileSystem 文件系统实现，默认使用 okio.FileSystem.SYSTEM（跨平台）
+ */
+class DiskLruCache(
+    private val cacheDir: String,
+    private val maxSizeBytes: Long = 5L * 1024 * 1024 * 1024, // 5GB
+    private val fileSystem: FileSystem = FileSystem.SYSTEM,
+) {
+    private val mutex = Mutex()
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /** 增量跟踪当前缓存总大小，避免每次遍历计算（S5 优化） */
+    private var currentSize: Long = 0L
+
+    data class CacheStats(
+        val totalSizeBytes: Long,
+        val fileCount: Int,
+        val maxSizeBytes: Long,
+    )
+
+    init {
+        fileSystem.createDirectories(cacheDir.toOkioPath())
+        // 启动时扫描一次，初始化 currentSize
+        scanCurrentSize()
+        // 启动定期淘汰协程（S5 优化：每 30 秒检查一次，避免阻塞写入路径）
+        scope.launch {
+            while (isActive) {
+                delay(30_000L)
+                evictIfNeeded()
+            }
+        }
+    }
+
+    // ==================== 原有 ByteArray 方法（保留向后兼容） ====================
+
+    /**
+     * 从缓存读取数据（全量 ByteArray 模式）。
+     * 对于大文件，建议使用 [getSource] 流式读取以避免 OOM。
+     */
+    suspend fun get(key: String): ByteArray? = mutex.withLock {
+        val path = keyToPath(key)
+        if (!fileSystem.exists(path)) return@withLock null
+        val data = fileSystem.read(path) {
+            readByteArray()
+        }
+        // 通过原子重写更新文件的 lastModifiedAtMillis，实现 LRU 访问时间更新
+        // 这是 okio 跨平台下唯一可行的方式
+        val tmpPath = cacheDir.toOkioPath() / "${path.name}.tmp"
+        fileSystem.write(tmpPath) { write(data) }
+        fileSystem.atomicMove(tmpPath, path)
+        data
+    }
+
+    /**
+     * 将数据写入缓存（全量 ByteArray 模式）。
+     * 对于大文件，建议使用 [putStream] 流式写入以避免 OOM。
+     */
+    suspend fun put(key: String, data: ByteArray) = mutex.withLock {
+        val path = keyToPath(key)
+        val tmpPath = "${path.name}.tmp".toOkioPath().let { tmp ->
+            cacheDir.toOkioPath() / tmp
+        }
+
+        fileSystem.write(tmpPath) {
+            write(data)
+        }
+        if (fileSystem.exists(path)) {
+            currentSize -= fileSystem.metadataOrNull(path)?.size ?: 0L
+        }
+        fileSystem.atomicMove(tmpPath, path)
+        currentSize += data.size
+    }
+
+    // ==================== 新增流式方法 ====================
+
+    /**
+     * 流式获取缓存文件，返回 Okio [Source]，避免一次性加载 ByteArray 导致 OOM。
+     *
+     * 读取后异步触发轻量级时间戳更新（[touchFile]），绝不阻塞本次读取。
+     *
+     * @param key 缓存键（通常是 URL）
+     * @return Okio Source，调用方需自行 close()；缓存不存在时返回 null
+     */
+    suspend fun getSource(key: String): Source? = mutex.withLock {
+        val path = keyToPath(key)
+        if (!fileSystem.exists(path)) return@withLock null
+
+        // 异步触发轻量级时间戳更新，绝不阻塞本次读取
+        scope.launch {
+            touchFile(path)
+        }
+
+        fileSystem.source(path)
+    }
+
+    /**
+     * 流式写入缓存，通过 [block] 回调提供 Okio [Sink]，调用方直接写入数据。
+     *
+     * 写入流程：
+     * 1. 先写入临时文件（.tmp）
+     * 2. 原子移动到目标路径（避免写入中断导致文件损坏）
+     * 3. 更新 currentSize
+     * 4. 触发惰性淘汰检查
+     *
+     * @param key 缓存键（通常是 URL）
+     * @param block 接收 [Sink] 的回调，在此回调中执行写入操作
+     */
+    suspend fun putStream(key: String, block: (Sink) -> Unit) = mutex.withLock {
+        val path = keyToPath(key)
+        val tmpPath = cacheDir.toOkioPath() / "${path.name}.tmp"
+
+        fileSystem.write(tmpPath) {
+            block(this)
+        }
+
+        if (fileSystem.exists(path)) {
+            currentSize -= fileSystem.metadataOrNull(path)?.size ?: 0L
+        }
+        fileSystem.atomicMove(tmpPath, path)
+        currentSize += fileSystem.metadataOrNull(path)?.size ?: 0L
+
+        // 触发惰性淘汰
+        checkAndEvict()
+    }
+
+    // ==================== 原有方法（保持不变） ====================
+
+    /**
+     * 检查缓存中是否存在指定 key。
+     */
+    suspend fun contains(key: String): Boolean = mutex.withLock {
+        fileSystem.exists(keyToPath(key))
+    }
+
+    /**
+     * 获取缓存统计信息。
+     */
+    suspend fun stats(): CacheStats = mutex.withLock {
+        var totalSize = 0L
+        var count = 0
+        fileSystem.list(cacheDir.toOkioPath()).forEach { path ->
+            if (!path.name.endsWith(".tmp")) {
+                totalSize += fileSystem.metadataOrNull(path)?.size ?: 0L
+                count++
+            }
+        }
+        CacheStats(totalSizeBytes = totalSize, fileCount = count, maxSizeBytes = maxSizeBytes)
+    }
+
+    /**
+     * 清空所有缓存。
+     */
+    suspend fun clear() = mutex.withLock {
+        fileSystem.deleteRecursively(cacheDir.toOkioPath())
+        fileSystem.createDirectories(cacheDir.toOkioPath())
+        currentSize = 0L
+    }
+
+    fun release() {
+        scope.cancel()
+    }
+
+    // ==================== 内部方法 ====================
+
+    /**
+     * 轻量化更新文件最后修改时间，避免原子重写整个大文件的巨大 IO 开销。
+     *
+     * 在 Android 侧，利用 Java File.setLastModified() 快速更新修改时间。
+     * 在其他平台（如 iOS），此操作可能静默失败，但不影响缓存功能。
+     */
+    private fun touchFile(path: Path) {
+        try {
+            // 利用 Java File 快速更新修改时间（Android / JVM 平台）
+            path.toFile().setLastModified(System.currentTimeMillis())
+        } catch (_: Exception) {
+            // 非 JVM 平台（如 iOS）不支持 toFile()，静默忽略
+        }
+    }
+
+    /**
+     * LRU 淘汰：当总大小超过上限时，删除最早访问的文件。
+     * 由定期协程调用，不阻塞写入路径（S5 优化）。
+     *
+     * 淘汰依据使用文件系统原生的 lastModifiedAtMillis（即文件最后写入时间），
+     * 因为 okio.FileSystem 不支持手动设置修改时间。
+     */
+    private suspend fun evictIfNeeded() = mutex.withLock {
+        if (currentSize <= maxSizeBytes) return@withLock
+
+        val files = fileSystem.list(cacheDir.toOkioPath())
+            .filter { !it.name.endsWith(".tmp") }
+            .map { path -> path to (fileSystem.metadataOrNull(path)?.lastModifiedAtMillis ?: 0L) }
+            .sortedBy { it.second } // 最旧的在前
+
+        for ((path, _) in files) {
+            if (currentSize <= maxSizeBytes) break
+            currentSize -= fileSystem.metadataOrNull(path)?.size ?: 0L
+            fileSystem.delete(path)
+        }
+    }
+
+    /**
+     * 快速检查并触发淘汰（在 putStream 写入后调用）。
+     * 如果当前大小超过上限，立即启动淘汰。
+     */
+    private suspend fun checkAndEvict() {
+        if (currentSize > maxSizeBytes) {
+            evictIfNeeded()
+        }
+    }
+
+    /** 启动时扫描缓存目录，初始化 currentSize */
+    private fun scanCurrentSize() {
+        currentSize = fileSystem.list(cacheDir.toOkioPath())
+            .filter { !it.name.endsWith(".tmp") }
+            .sumOf { fileSystem.metadataOrNull(it)?.size ?: 0L }
+    }
+
+    /** URL → 合法文件名 */
+    private fun keyToPath(key: String): Path {
+        val fileName = key
+            .replace("https://", "").replace("http://", "")
+            .replace("/", "_").replace("?", "_")
+            .replace("&", "_").replace("=", "_").replace(":", "_")
+        return cacheDir.toOkioPath() / fileName
+    }
+}
+
+/**
+ * 将字符串路径转换为 okio.Path。
+ * okio 的 Path 是跨平台路径抽象，替代 java.io.File / NSString。
+ */
+internal fun String.toOkioPath(): Path = this.toPath(normalize = false)
+
+/**
+ * 安全获取 FileSystem.metadata，不存在时返回 null。
+ */
+private fun FileSystem.metadataOrNull(path: Path): okio.FileMetadata? {
+    return try {
+        metadata(path)
+    } catch (_: Exception) {
+        null
+    }
+}
