@@ -189,6 +189,17 @@ class DomesticApi(
     }
 
     /**
+     * 搜索结果，包含匹配的条目和来源站点的 base URL。
+     *
+     * 用于在 [searchFirstMatch] 中同时返回匹配的站点信息，
+     * 以便调用方拼接相对路径的封面图 URL。
+     */
+    data class SearchMatchResult(
+        val item: DomesticApiItem,
+        val siteBaseUrl: String,
+    )
+
+    /**
      * 搜索影视内容，找到第一个标题匹配的条目即返回。
      *
      * 与 [search] 不同，此方法在遍历站点时一旦找到名称匹配的条目就立即返回，
@@ -196,9 +207,9 @@ class DomesticApi(
      * 用于详情页分阶段加载中的 Phase 1（快速展示基本信息）。
      *
      * @param keyword 搜索关键词
-     * @return 第一个标题匹配的条目，未找到则返回 null
+     * @return 第一个标题匹配的条目及其来源站点 base URL，未找到则返回 null
      */
-    suspend fun searchFirstMatch(keyword: String): DomesticApiItem? {
+    suspend fun searchFirstMatch(keyword: String): SearchMatchResult? {
         val sites = loadActiveSites()
         if (sites.isEmpty()) return null
 
@@ -215,12 +226,30 @@ class DomesticApi(
                     item.name.contains(keyword, ignoreCase = true) ||
                         keyword.contains(item.name, ignoreCase = true)
                 }
-                if (match != null) return match
+                if (match != null) {
+                    // 从 site.api 提取 base URL（去掉路径部分）
+                    val baseUrl = extractBaseUrl(site.api)
+                    return SearchMatchResult(item = match, siteBaseUrl = baseUrl)
+                }
             } catch (_: Exception) {
                 // 单个站点失败不影响其他站点
             }
         }
         return null
+    }
+
+    /**
+     * 从 API URL 中提取 base URL。
+     *
+     * 例如：https://example.com/api.php → https://example.com
+     */
+    private fun extractBaseUrl(apiUrl: String): String {
+        return try {
+            val uri = io.ktor.http.Url(apiUrl)
+            "${uri.protocol.name}://${uri.host}"
+        } catch (e: Exception) {
+            apiUrl
+        }
     }
 
     /**

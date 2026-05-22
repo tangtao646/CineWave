@@ -35,6 +35,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
 import com.example.kmp_demo.core.initializeCoil
+import com.example.kmp_demo.core.navigation.decodeNavParam
 import com.example.kmp_demo.core.security.SensitiveWordFilter
 import com.example.kmp_demo.core.security.SensitiveWordLoader
 import com.example.kmp_demo.features.domestic.DomesticRoutes
@@ -163,7 +164,9 @@ fun App() {
                         // 电影详情页
                         currentRoute.startsWith("film_detail/") -> {
                             val movieId = currentRoute.removePrefix("film_detail/").toIntOrNull() ?: return@CompositionLocalProvider
+                            // 使用 currentRoute 作为 key，确保切换不同电影时创建新的 ViewModel
                             val viewModel: FilmDetailViewModel = koinViewModel(
+                                key = currentRoute,
                                 parameters = { parametersOf(movieId) }
                             )
                             FilmDetailScreen(
@@ -195,8 +198,11 @@ fun App() {
 
                         // 国产详情页
                         currentRoute.startsWith("domestic_detail/") -> {
-                            val title = currentRoute.removePrefix("domestic_detail/")
+                            val encodedTitle = currentRoute.removePrefix("domestic_detail/")
+                            val title = encodedTitle.decodeNavParam()
+                            // 使用 currentRoute 作为 key，确保切换不同影视时创建新的 ViewModel
                             val viewModel: DomesticDetailViewModel = koinViewModel(
+                                key = currentRoute,
                                 parameters = { parametersOf(title) }
                             )
                             DomesticDetailScreen(

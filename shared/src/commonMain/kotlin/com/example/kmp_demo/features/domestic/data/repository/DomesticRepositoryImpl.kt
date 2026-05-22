@@ -103,10 +103,10 @@ class DomesticRepositoryImpl(
         return try {
             // 仅通过 DomesticApi 搜索获取封面图、简介等元数据（不含播放源）
             // 使用 searchFirstMatch 找到第一个匹配即返回，避免遍历所有站点
-            val apiItem = domesticApi.searchFirstMatch(title)
+            val matchResult = domesticApi.searchFirstMatch(title)
 
-            if (apiItem != null) {
-                Result.success(apiItem.toDomesticMedia())
+            if (matchResult != null) {
+                Result.success(matchResult.item.toDomesticMedia())
             } else {
                 // 降级：返回仅有标题的占位媒体，让 UI 至少能展示标题
                 Result.success(
