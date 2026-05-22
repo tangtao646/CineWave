@@ -25,6 +25,7 @@ import com.example.kmp_demo.core.components.PageContainer
 import com.example.kmp_demo.core.components.rememberPageStatus
 import com.example.kmp_demo.core.components.safeContent
 import com.example.kmp_demo.features.domestic.domain.model.DomesticMedia
+import com.example.kmp_demo.core.components.gridColumns
 import com.example.kmp_demo.features.domestic.ui.components.DomesticMediaCard
 import com.example.kmp_demo.features.domestic.ui.components.DomesticSkeletonItem
 import org.koin.compose.viewmodel.koinViewModel
@@ -126,7 +127,7 @@ fun DomesticHomeScreen(
             modifier = Modifier.padding(paddingValues),
             loadingContent = {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                    columns = GridCells.Fixed(gridColumns()),
                     contentPadding = PaddingValues(8.dp)
                 ) {
                     items(6) { DomesticSkeletonItem() }
@@ -134,7 +135,7 @@ fun DomesticHomeScreen(
             }
         ) {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Fixed(gridColumns()),
                 contentPadding = PaddingValues(8.dp),
                 modifier = Modifier.fillMaxSize()
             ) {

@@ -27,6 +27,7 @@ import com.example.kmp_demo.core.components.rememberPageStatus
 import com.example.kmp_demo.core.components.safeContent
 import com.example.kmp_demo.features.film.data.remote.dto.GenreDto
 import com.example.kmp_demo.features.film.domain.model.MovieSortOrder
+import com.example.kmp_demo.core.components.gridColumns
 import com.example.kmp_demo.features.film.ui.components.MovieCard
 import com.example.kmp_demo.features.film.ui.components.MovieSkeletonItem
 import org.koin.compose.viewmodel.koinViewModel
@@ -131,7 +132,7 @@ fun FilmHomeScreen(
             modifier = Modifier.padding(paddingValues),
             loadingContent = {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                    columns = GridCells.Fixed(gridColumns()),
                     contentPadding = PaddingValues(8.dp)
                 ) {
                     items(6) { MovieSkeletonItem() }
@@ -139,7 +140,7 @@ fun FilmHomeScreen(
             }
         ) {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Fixed(gridColumns()),
                 contentPadding = PaddingValues(8.dp),
                 modifier = Modifier
                     .fillMaxSize()

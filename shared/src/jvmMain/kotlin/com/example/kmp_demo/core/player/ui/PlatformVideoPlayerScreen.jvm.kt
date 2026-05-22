@@ -1,6 +1,7 @@
 package com.example.kmp_demo.core.player.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -8,20 +9,28 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.ContentScale
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
+import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
+import io.github.kdroidfilter.composemediaplayer.AudioMode
+import io.github.kdroidfilter.composemediaplayer.InitialPlayerState
+import io.github.kdroidfilter.composemediaplayer.VideoPlayerSurface
+import io.github.kdroidfilter.composemediaplayer.rememberVideoPlayerState
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 /**
- * Desktop 平台视频播放器屏幕
+ * Desktop 平台视频播放器屏幕 — 基于 ComposeMediaPlayer
  *
- * 由于 Desktop 上视频渲染需要原生组件集成（JavaFX/VLCJ），
- * 当前实现提供一个占位 UI，显示视频播放状态和控制栏。
+ * 使用 [VideoPlayerSurface] 渲染视频，底层在 macOS 上使用 AVFoundation，
+ * 在 Windows/Linux 上使用 JavaFX MediaPlayer。
  *
- * 实际视频渲染方案：
- * 1. SwingPanel + JavaFX MediaView（需 javafx-media 依赖）
- * 2. SwingPanel + VLCJ Canvas（需 VLC 原生库）
- * 3. 外部播放器窗口
+ * 优势：
+ * - 纯 Compose 实现，无需 Swing/AWT
+ * - 跨平台一致 API
+ * - 无需安装 VLC
+ * - 硬件加速（macOS AVFoundation / Windows MediaFoundation）
  */
 @Composable
 actual fun PlatformVideoPlayerScreen(
@@ -33,51 +42,121 @@ actual fun PlatformVideoPlayerScreen(
     topBar: @Composable (BoxScope.() -> Unit)?,
     onFullScreenChange: ((Boolean) -> Unit)?,
 ) {
+    val controller = koinInject<DesktopVideoPlayerController>()
+    val uiState by controller.playbackState.collectAsState()
+    val currentPosition by controller.currentPosition.collectAsState()
+    val duration by controller.duration.collectAsState()
+    val bufferedPercent by controller.bufferedPercent.collectAsState()
+    val volume by controller.volume.collectAsState()
+    val isFullScreen by controller.isFullScreen.collectAsState()
+
+    val aggregatedState = remember(uiState, currentPosition, duration, bufferedPercent, volume, isFullScreen) {
+        VideoPlayerUiState(
+            playbackState = uiState,
+            currentPosition = currentPosition,
+            duration = duration,
+            bufferedPercent = bufferedPercent,
+            volume = volume,
+            isFullScreen = isFullScreen,
+        )
+    }
+
+    // 创建 ComposeMediaPlayer 的 VideoPlayerState
+    val videoPlayerState = rememberVideoPlayerState(
+        audioMode = AudioMode() // 默认音频模式
+    )
+
+    // 将 VideoPlayerState 注入到 Controller
+    LaunchedEffect(videoPlayerState) {
+        controller.setVideoPlayerState(videoPlayerState)
+    }
+
+    // 打开视频
+    LaunchedEffect(url) {
+        controller.open(url, headers)
+    }
+
+    // 全屏状态变化
+    LaunchedEffect(isFullScreen) {
+        onFullScreenChange?.invoke(isFullScreen)
+    }
+
+    // 释放资源
+    DisposableEffect(controller) {
+        onDispose {
+            controller.release()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 视频区域占位 — 显示当前播放信息
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = "▶ Desktop 视频播放",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "需要集成 JavaFX/VLCJ 实现视频渲染",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.DarkGray,
-                    textAlign = TextAlign.Center
-                )
+        // ComposeMediaPlayer 视频渲染
+        VideoPlayerSurface(
+            playerState = videoPlayerState,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+            overlay = {
+                // 使用 ComposeMediaPlayer 内置控制栏（可选）
+                // 我们使用自定义控制栏，所以这里留空
             }
-        }
+        )
 
-        // 顶栏
-        topBar?.let {
-            Box(modifier = Modifier.align(Alignment.TopCenter)) {
-                it()
+        // 覆盖层（控制栏 + 顶栏）
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 中央播放/暂停按钮
+            val scope = rememberCoroutineScope()
+            if (aggregatedState.playbackState.name in listOf("PAUSED", "IDLE", "READY", "ENDED")) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(64.dp)
+                        .clickable { scope.launch { controller.togglePlayPause() } },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (aggregatedState.isPlaying) "⏸" else "▶",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = Color.White
+                    )
+                }
+            }
+
+            // 底部控制栏
+            Box(modifier = Modifier.align(Alignment.BottomCenter)) {
+                controls(aggregatedState) { action ->
+                    scope.launch {
+                        handlePlayerAction(controller, action)
+                    }
+                }
+            }
+
+            // 顶部栏
+            topBar?.let {
+                Box(modifier = Modifier.align(Alignment.TopCenter)) {
+                    it()
+                }
             }
         }
+    }
+}
+
+internal suspend fun handlePlayerAction(
+    controller: DesktopVideoPlayerController,
+    action: PlayerAction,
+) {
+    when (action) {
+        PlayerAction.TogglePlayPause -> controller.togglePlayPause()
+        is PlayerAction.SeekForward -> controller.seekForward(action.seconds)
+        is PlayerAction.SeekBackward -> controller.seekBackward(action.seconds)
+        is PlayerAction.SeekToFraction -> {
+            // 需要 duration 来计算目标位置
+        }
+        is PlayerAction.SeekToMs -> controller.seekTo(action.positionMs)
+        PlayerAction.ToggleFullScreen -> controller.toggleFullScreen()
+        PlayerAction.ToggleControls -> { /* 控制栏可见性由 UI 层管理 */ }
+        else -> {}
     }
 }

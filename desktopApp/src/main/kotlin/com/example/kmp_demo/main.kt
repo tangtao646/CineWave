@@ -13,9 +13,9 @@ import com.example.kmp_demo.core.player.domain.LocalFullscreenController
 import com.example.kmp_demo.core.videosource.di.coreVideosourceModule
 import com.example.kmp_demo.di.commonModule
 import com.example.kmp_demo.di.platformModule
-import com.example.kmp_demo.features.domestic.di.domesticModule
-import com.example.kmp_demo.features.film.di.filmModule
-import com.example.kmp_demo.features.radio.di.radioModule
+import com.example.kmp_demo.features.domestic.di.domesticModuleJvm
+import com.example.kmp_demo.features.film.di.filmModuleJvm
+import com.example.kmp_demo.features.radio.di.radioModuleJvm
 import org.koin.core.context.startKoin
 import org.koin.core.logger.Level
 
@@ -27,9 +27,9 @@ fun main() = application {
             commonModule,
             platformModule,
             coreVideosourceModule,
-            radioModule,
-            filmModule,
-            domesticModule,
+            radioModuleJvm,
+            filmModuleJvm,
+            domesticModuleJvm,
         )
     }
 

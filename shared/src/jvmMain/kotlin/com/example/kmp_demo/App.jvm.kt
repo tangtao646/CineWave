@@ -39,9 +39,12 @@ import com.example.kmp_demo.core.security.SensitiveWordFilter
 import com.example.kmp_demo.core.security.SensitiveWordLoader
 import com.example.kmp_demo.features.domestic.DomesticRoutes
 import com.example.kmp_demo.features.domestic.ui.DomesticDetailScreen
+import com.example.kmp_demo.features.domestic.ui.DomesticDetailViewModel
 import com.example.kmp_demo.features.domestic.ui.DomesticHomeScreen
 import com.example.kmp_demo.features.domestic.ui.DomesticSearchScreen
 import com.example.kmp_demo.features.film.FilmRoutes
+import com.example.kmp_demo.features.film.ui.FilmDetailScreen
+import com.example.kmp_demo.features.film.ui.FilmDetailViewModel
 import com.example.kmp_demo.features.film.ui.FilmHomeScreen
 import com.example.kmp_demo.features.radio.RadioRoutes
 import com.example.kmp_demo.features.radio.ui.components.MiniPlayerBar
@@ -52,6 +55,7 @@ import com.example.kmp_demo.features.radio.ui.search.RadioSearchScreen
 import org.koin.compose.KoinContext
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 /**
  * Desktop 平台的 App 入口。
@@ -150,7 +154,24 @@ fun App() {
                         currentRoute == FilmRoutes.home -> {
                             FilmHomeScreen(
                                 onSearchClick = { currentRoute = FilmRoutes.search },
-                                onMovieClick = { currentRoute = FilmRoutes.detail }
+                                onMovieClick = { movieId ->
+                                    currentRoute = FilmRoutes.detail(movieId)
+                                }
+                            )
+                        }
+
+                        // 电影详情页
+                        currentRoute.startsWith("film_detail/") -> {
+                            val movieId = currentRoute.removePrefix("film_detail/").toIntOrNull() ?: return@CompositionLocalProvider
+                            val viewModel: FilmDetailViewModel = koinViewModel(
+                                parameters = { parametersOf(movieId) }
+                            )
+                            FilmDetailScreen(
+                                viewModel = viewModel,
+                                onBackClick = { currentRoute = FilmRoutes.home },
+                                onNavigateToPlayer = { url, title ->
+                                    // TODO: 实现 Desktop 播放器导航
+                                }
                             )
                         }
 
@@ -172,7 +193,20 @@ fun App() {
                             })
                         }
 
-
+                        // 国产详情页
+                        currentRoute.startsWith("domestic_detail/") -> {
+                            val title = currentRoute.removePrefix("domestic_detail/")
+                            val viewModel: DomesticDetailViewModel = koinViewModel(
+                                parameters = { parametersOf(title) }
+                            )
+                            DomesticDetailScreen(
+                                viewModel = viewModel,
+                                onBack = { currentRoute = DomesticRoutes.home },
+                                onPlay = { url, title, episodes ->
+                                    // TODO: 实现 Desktop 播放器导航
+                                }
+                            )
+                        }
                     }
                 }
             }

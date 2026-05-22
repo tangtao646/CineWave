@@ -1,6 +1,5 @@
 package com.example.kmp_demo.features.domestic.ui
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.example.kmp_demo.core.BaseMviViewModel
 import com.example.kmp_demo.core.IUiEffect
@@ -49,6 +48,11 @@ class DomesticDetailContract {
 /**
  * 国内影视详情页 ViewModel。
  *
+ * 跨平台通用，不依赖任何平台特定类（如 SavedStateHandle）。
+ * mediaTitle 由各平台通过构造函数直接传入：
+ * - Android：从 Navigation Compose 的 SavedStateHandle 提取后传入
+ * - Desktop：从导航参数直接传入
+ *
  * 分阶段加载数据以优化用户体验：
  * - 先加载元数据（封面、简介）→ 立即展示
  * - 再加载播放源列表 → 完成后追加展示
@@ -58,12 +62,10 @@ class DomesticDetailContract {
  */
 class DomesticDetailViewModel(
     private val repository: DomesticRepository,
-    savedStateHandle: SavedStateHandle
+    private val mediaTitle: String,
 ) : BaseMviViewModel<DomesticDetailContract.State, DomesticDetailContract.Intent, DomesticDetailContract.Effect>(
     initialState = DomesticDetailContract.State()
 ) {
-
-    private val mediaTitle: String = checkNotNull(savedStateHandle["title"])
 
     /**
      * 剧集列表缓存，供播放器页（[DomesticPlayerScreen]）通过共享 ViewModel 读取。

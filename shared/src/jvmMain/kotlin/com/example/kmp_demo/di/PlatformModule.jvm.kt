@@ -1,8 +1,5 @@
 package com.example.kmp_demo.di
 
-import com.example.kmp_demo.core.data.local.room.AppDatabase
-import com.example.kmp_demo.core.data.local.room.getDatabaseBuilder
-import com.example.kmp_demo.core.data.local.room.getRoomDatabase
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.M3u8CacheInterceptor
 import com.example.kmp_demo.core.player.domain.IPlayerController as VideoPlayerController
@@ -15,18 +12,17 @@ import org.koin.dsl.module
 /**
  * Desktop (JVM) 平台特定的 Koin 模块
  *
+ * ⚠️ 注意：Desktop 端不使用 Room 数据库。
+ * 所有数据直接从网络加载，不持久化。
+ *
  * 提供 Desktop 上所有平台相关依赖的实现：
- * - Room 数据库（使用 SQLite JDBC）
  * - 磁盘缓存
  * - M3U8 缓存拦截器
  * - 视频播放器（JavaFX MediaPlayer）
  * - 电台播放器（JavaFX MediaPlayer）
  */
 actual val platformModule: Module = module {
-    // === Room Database ===
-    single<AppDatabase> {
-        getRoomDatabase(getDatabaseBuilder())
-    }
+    // ❌ 移除 Room Database — Desktop 不需要数据库缓存
 
     // === Disk Cache ===
     single<DiskLruCache> {
@@ -44,12 +40,12 @@ actual val platformModule: Module = module {
         )
     }
 
-    // === Video Player Controller (JavaFX MediaPlayer) ===
+    // === Video Player Controller (ComposeMediaPlayer) ===
     single<VideoPlayerController> {
-        DesktopVideoPlayerController(diskCache = get())
+        DesktopVideoPlayerController()
     }
 
-    // === Radio Player Controller (JavaFX MediaPlayer) ===
+    // === Radio Player Controller (ComposeMediaPlayer) ===
     single<RadioPlayerController> {
         DesktopRadioPlayerController()
     }

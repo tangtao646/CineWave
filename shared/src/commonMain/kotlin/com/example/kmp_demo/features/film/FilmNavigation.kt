@@ -18,6 +18,7 @@ import com.example.kmp_demo.features.film.ui.FilmHomeScreen
 import com.example.kmp_demo.features.film.ui.player.FilmPlayerScreen
 import com.example.kmp_demo.features.film.ui.search.FilmSearchScreen
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 /**
  * 电影板块路由协议
@@ -70,8 +71,15 @@ fun NavGraphBuilder.filmGraph(
             arguments = listOf(
                 navArgument("movieId") { type = NavType.IntType }
             )
-        ) {
+        ) { backStackEntry ->
+            // 从 NavBackStackEntry 提取 movieId，通过 parametersOf 传入 ViewModel
+            val args = backStackEntry.arguments ?: return@composable
+            val movieId = NavType.IntType.get(args, "movieId")
+            val viewModel: FilmDetailViewModel = koinViewModel(
+                parameters = { parametersOf(movieId) }
+            )
             FilmDetailScreen(
+                viewModel = viewModel,
                 onBackClick = { navController.popBackStack() },
                 onNavigateToPlayer = { url, title ->
                     navController.navigate(FilmRoutes.player(url, title))

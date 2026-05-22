@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.example.kmp_demo.LocalScaffoldPadding
 import com.example.kmp_demo.core.components.PageContainer
+import com.example.kmp_demo.core.components.VideoSourceListContent
 import com.example.kmp_demo.core.components.shimmer
 import com.example.kmp_demo.core.player.domain.EpisodeInfo
 import com.example.kmp_demo.core.videosource.domain.VideoSource
@@ -234,29 +235,11 @@ private fun DomesticDetailContent(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (isSniffing) {
-                // 正在嗅探播放源 — 显示加载指示器
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "正在搜索播放资源...",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            } else if (videoSources.isEmpty()) {
-                Text(
-                    text = "未找到可用资源",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            } else {
-                videoSources.forEach { source ->
-                    DomesticVideoSourceItem(
-                        source = source,
-                        onPlayClick = { onPlayClick(source) },
-                    )
-                }
-            }
+            VideoSourceListContent(
+                videoSources = videoSources,
+                isSniffing = isSniffing,
+                onPlayClick = onPlayClick,
+            )
 
             Spacer(modifier = Modifier.height(48.dp))
         }

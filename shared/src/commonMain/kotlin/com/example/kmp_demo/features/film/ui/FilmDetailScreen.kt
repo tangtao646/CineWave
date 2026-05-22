@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.example.kmp_demo.core.components.PageContainer
+import com.example.kmp_demo.core.components.VideoSourceListContent
 import com.example.kmp_demo.core.components.shimmer
 import com.example.kmp_demo.features.film.domain.model.CastMember
 import com.example.kmp_demo.features.film.domain.model.MovieDetail
@@ -143,21 +144,11 @@ fun MovieDetailContent(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (isSniffing) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            } else if (videoSources.isEmpty()) {
-                Text(
-                    text = "未找到可用资源，正在尝试嗅探...",
-                    color = MaterialTheme.colorScheme.outline
-                )
-            } else {
-                videoSources.forEach { source ->
-                    VideoSourceItem(
-                        source = source,
-                        onPlayClick = { onPlayClick(source) },
-                    )
-                }
-            }
+            VideoSourceListContent(
+                videoSources = videoSources,
+                isSniffing = isSniffing,
+                onPlayClick = onPlayClick,
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 
