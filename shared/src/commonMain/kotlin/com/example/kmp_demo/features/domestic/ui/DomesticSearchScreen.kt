@@ -14,6 +14,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.example.kmp_demo.core.components.gridColumns
 import com.example.kmp_demo.features.domestic.domain.model.DomesticMedia
 import com.example.kmp_demo.features.domestic.ui.components.DomesticMediaCard
 import org.koin.compose.viewmodel.koinViewModel
@@ -143,7 +144,7 @@ fun DomesticSearchScreen(
                 // 搜索结果
                 else -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                        columns = GridCells.Fixed(gridColumns()),
                         contentPadding = PaddingValues(8.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {

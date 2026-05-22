@@ -19,6 +19,7 @@ import androidx.paging.LoadState
 import app.cash.paging.compose.collectAsLazyPagingItems
 import app.cash.paging.compose.itemKey
 import com.example.kmp_demo.core.components.PageContainer
+import com.example.kmp_demo.core.components.gridColumns
 import com.example.kmp_demo.core.components.rememberPageStatus
 import com.example.kmp_demo.core.components.safeContent
 import com.example.kmp_demo.features.film.ui.components.MovieCard
@@ -111,7 +112,7 @@ fun FilmSearchScreen(
                     onRetry = { searchResults.retry() }
                 ) {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                        columns = GridCells.Fixed(gridColumns()),
                         contentPadding = PaddingValues(8.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {

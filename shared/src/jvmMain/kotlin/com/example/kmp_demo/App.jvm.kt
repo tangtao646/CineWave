@@ -47,6 +47,7 @@ import com.example.kmp_demo.features.film.FilmRoutes
 import com.example.kmp_demo.features.film.ui.FilmDetailScreen
 import com.example.kmp_demo.features.film.ui.FilmDetailViewModel
 import com.example.kmp_demo.features.film.ui.FilmHomeScreen
+import com.example.kmp_demo.features.film.ui.search.FilmSearchScreen
 import com.example.kmp_demo.features.radio.RadioRoutes
 import com.example.kmp_demo.features.radio.ui.components.MiniPlayerBar
 import com.example.kmp_demo.features.radio.ui.list.RadioListScreen
@@ -161,6 +162,16 @@ fun App() {
                             )
                         }
 
+                        // 电影搜索页
+                        currentRoute == FilmRoutes.search -> {
+                            FilmSearchScreen(
+                                onBackClick = { currentRoute = FilmRoutes.home },
+                                onMovieClick = { movieId ->
+                                    currentRoute = FilmRoutes.detail(movieId)
+                                }
+                            )
+                        }
+
                         // 电影详情页
                         currentRoute.startsWith("film_detail/") -> {
                             val movieId = currentRoute.removePrefix("film_detail/").toIntOrNull() ?: return@CompositionLocalProvider
@@ -188,12 +199,14 @@ fun App() {
                             )
                         }
 
+                        // 国产搜索页
                         currentRoute == DomesticRoutes.search -> {
-                            DomesticSearchScreen(onBackClick = {
-
-                            }, onMediaClick = {
-
-                            })
+                            DomesticSearchScreen(
+                                onBackClick = { currentRoute = DomesticRoutes.home },
+                                onMediaClick = { media ->
+                                    currentRoute = DomesticRoutes.detail(media.title)
+                                }
+                            )
                         }
 
                         // 国产详情页
