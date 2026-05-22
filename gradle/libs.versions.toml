@@ -9,7 +9,7 @@ androidx-core = "1.18.0"
 androidx-espresso = "3.7.0"
 androidx-lifecycle = "2.8.7"
 androidx-testExt = "1.3.0"
-composeMultiplatform = "1.10.3"
+composeMultiplatform = "1.11.0"
 junit = "4.13.2"
 kotlin = "2.3.20"
 kotlinx-serialization = "1.8.1"
@@ -149,6 +149,7 @@ compose-uiTestJunit4 = { module = "org.jetbrains.compose.ui:ui-test-junit4", ver
 compose-uiTest = { group = "org.jetbrains.compose.ui", name = "ui-test", version.ref = "composeUiTest" }
 androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3Ui" }
 
+compose-ui-util = { module = "org.jetbrains.compose.ui:ui-util", version.ref = "composeMultiplatform" }
 
 
 

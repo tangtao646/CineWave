@@ -107,6 +107,7 @@ kotlin {
             implementation(libs.koin.core)
             implementation(libs.koin.compose)
             implementation(libs.koin.compose.viewmodel)
+            implementation(libs.compose.ui.util)
 
             // Navigation Compose 在 Desktop 上需要 savedstate 兼容库
             implementation("org.jetbrains.androidx.savedstate:savedstate:1.3.6")

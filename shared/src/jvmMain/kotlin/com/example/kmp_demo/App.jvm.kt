@@ -1,17 +1,24 @@
 package com.example.kmp_demo
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -23,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
@@ -44,6 +52,10 @@ import org.koin.compose.viewmodel.koinViewModel
  * 由于 JetBrains Navigation Compose 在 Desktop 上存在
  * SavedStateRegistryController.performRestore(Bundle) 的兼容性问题，
  * 这里使用简单的状态管理替代 NavHost。
+ *
+ * 注意：Desktop 上 Material3 的 NavigationBarItem 内部使用 animateColorAsState，
+ * 而 Oklab 色彩空间在 JetBrains Compose 中未实现，会导致运行时崩溃。
+ * 因此这里使用自定义的底部栏实现，避免颜色动画。
  */
 @Composable
 fun App() {
@@ -116,6 +128,13 @@ fun App() {
     }
 }
 
+/**
+ * Desktop 底部导航栏。
+ *
+ * 使用自定义实现替代 Material3 的 NavigationBarItem，因为 Desktop 上
+ * NavigationBarItem 内部的 animateColorAsState 使用了 Oklab 色彩空间，
+ * 而 Oklab 在 JetBrains Compose 中未实现，会导致运行时崩溃。
+ */
 @Composable
 fun DesktopBottomBar(
     currentScreen: String,
@@ -127,15 +146,45 @@ fun DesktopBottomBar(
         DesktopScreen("domestic", "国产", Icons.Default.Tv)
     )
 
-    NavigationBar {
-        screens.forEach { screen ->
-            val selected = screen.route == currentScreen
-            NavigationBarItem(
-                label = { Text(text = screen.title) },
-                icon = { Icon(imageVector = screen.icon, contentDescription = null) },
-                selected = selected,
-                onClick = { onNavigate(screen.route) }
-            )
+    Surface(
+        tonalElevation = 3.dp,
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            screens.forEach { screen ->
+                val selected = screen.route == currentScreen
+                val contentColor = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clickable { onNavigate(screen.route) }
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = screen.icon,
+                        contentDescription = screen.title,
+                        tint = contentColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = screen.title,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor
+                    )
+                }
+            }
         }
     }
 }
