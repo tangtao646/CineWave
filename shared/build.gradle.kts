@@ -109,10 +109,18 @@ kotlin {
             implementation(libs.koin.compose.viewmodel)
             implementation(libs.compose.ui.util)
 
+            // Paging (app.cash.paging) — Desktop 端需要显式添加
+            implementation(libs.paging.common)
+            implementation(libs.paging.compose.common)
+
+
             // Navigation Compose 在 Desktop 上需要 savedstate 兼容库
             implementation("org.jetbrains.androidx.savedstate:savedstate:1.3.6")
             implementation("org.jetbrains.androidx.savedstate:savedstate-compose:1.3.6")
 
+            // VLCJ — Desktop 电台播放器
+            // 需要用户安装 VLC: brew install vlc
+            implementation("uk.co.caprica:vlcj:4.8.2")
         }
     }
 }
@@ -132,6 +140,7 @@ dependencies {
     configurations.matching { it.name.startsWith("kspIos") }.configureEach {
         add(this.name, libs.room.compiler)
     }
+    // jvmMain 需要 Room KSP 来生成 AppDatabase 的 actual 实现（满足 expect 声明）
     add("kspJvm", libs.room.compiler)
 
     androidRuntimeClasspath(libs.compose.uiTooling)

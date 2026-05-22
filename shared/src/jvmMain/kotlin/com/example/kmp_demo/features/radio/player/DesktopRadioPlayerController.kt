@@ -6,30 +6,46 @@ import com.example.kmp_demo.features.radio.domain.player.MediaMetadataInfo
 import com.example.kmp_demo.features.radio.domain.player.PlayableMedia
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import java.net.URI
-import javax.sound.sampled.*
+import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
+import uk.co.caprica.vlcj.media.MediaRef
+import uk.co.caprica.vlcj.player.base.MediaPlayer
+import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
+import uk.co.caprica.vlcj.factory.MediaPlayerFactory
+import java.io.FileWriter
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 /**
- * Desktop 电台播放器 — 基于 javax.sound 实现
+ * Desktop 电台播放器 — 基于 VLCJ
  *
- * 使用 Java 内置的音频系统播放 MP3/AAC 流媒体。
- * 注意：javax.sound 原生不支持 MP3 解码，需要额外安装 MP3SPI 或使用其他方案。
- * 当前实现使用 AudioSystem 播放 PCM/WAV/AU 格式，对于 MP3 流需要添加
- * 第三方 SPI（如 mp3spi、jlayer）或使用 JavaFX MediaPlayer。
+ * VLCJ 是 libVLC 的 Java 绑定，原生支持各种音频格式（MP3/AAC/OGG/FLAC）和流媒体协议（HTTP/HTTPS/HLS）。
+ * 需要用户安装 VLC: brew install vlc
  *
- * 替代方案：
- * - 使用 JavaFX MediaPlayer（需添加 javafx-media 依赖）
- * - 使用 VLCJ（需安装 VLC）
- * - 使用 https://github.com/dheid/jlayer 纯 Java MP3 解码
+ * 优势：
+ * - 原生支持所有音频格式，无需额外解码器
+ * - 稳定的流媒体播放能力
+ * - 内置缓冲管理
+ * - 支持播放/暂停/停止
  */
 class DesktopRadioPlayerController : IPlayerController {
+
+    companion object {
+        private const val LOG_FILE = "radio_player_debug.log"
+        private fun log(msg: String) {
+            try {
+                val time = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
+                FileWriter(LOG_FILE, true).use { it.write("[$time] $msg\n") }
+            } catch (_: Exception) { }
+        }
+    }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private var currentPlaylist = listOf<PlayableMedia>()
     private var currentIndex = -1
-    private var clip: Clip? = null
-    private var audioStream: AudioInputStream? = null
+    private var mediaPlayerFactory: MediaPlayerFactory? = null
+    private var mediaPlayer: MediaPlayer? = null
+    private var isPaused = false
 
     private val _isPlaying = MutableStateFlow(false)
     override val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -46,7 +62,21 @@ class DesktopRadioPlayerController : IPlayerController {
     private val _errorEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
     override val errorEvents: SharedFlow<String> = _errorEvents.asSharedFlow()
 
+    init {
+        log("=== DesktopRadioPlayerController init ===")
+        // 尝试发现本地 VLC 安装
+        val discovery = NativeDiscovery()
+        val found = discovery.discover()
+        log("NativeDiscovery: found=$found")
+        if (found) {
+            log("VLC path: ${discovery.discoveredPath()}")
+        } else {
+            log("VLC not found! Please install VLC: brew install vlc")
+        }
+    }
+
     override suspend fun setPlaylist(items: List<PlayableMedia>, startIndex: Int) {
+        log("=== setPlaylist: items.size=${items.size}, startIndex=$startIndex")
         currentPlaylist = items
         currentIndex = startIndex
         if (startIndex in items.indices) {
@@ -54,64 +84,148 @@ class DesktopRadioPlayerController : IPlayerController {
         }
     }
 
-    private fun loadAndPlay(item: PlayableMedia) {
-        releaseCurrentPlayer()
+    private suspend fun loadAndPlay(item: PlayableMedia) {
+        log("loadAndPlay: ${item.title}, uri=${item.uri.take(80)}")
         _currentMediaId.value = item.id
         _playbackState.value = AppPlaybackState.BUFFERING
+        _isPlaying.value = false
 
-        try {
-            val url = URI(item.uri).toURL()
-            audioStream = AudioSystem.getAudioInputStream(url)
-            val format = audioStream!!.format
+        // 释放旧的播放器
+        releaseMediaPlayer()
+        isPaused = false
 
-            // 如果音频格式需要转换（如 MP3），使用 AudioSystem.getAudioInputStream 转换
-            val decodedFormat = AudioFormat(
-                AudioFormat.Encoding.PCM_SIGNED,
-                format.sampleRate,
-                16,
-                format.channels,
-                format.channels * 2,
-                format.sampleRate,
-                false
-            )
-            val decodedStream = AudioSystem.getAudioInputStream(decodedFormat, audioStream)
+        val readyDeferred = CompletableDeferred<Result<Unit>>()
 
-            clip = AudioSystem.getClip().apply {
-                open(decodedStream)
-                addLineListener { event ->
-                    when (event.type) {
-                        LineEvent.Type.START -> {
-                            _isPlaying.value = true
-                            _playbackState.value = AppPlaybackState.READY
+        withContext(Dispatchers.Default) {
+            try {
+                log("Creating MediaPlayerFactory...")
+                val factory = MediaPlayerFactory()
+                mediaPlayerFactory = factory
+
+                log("Creating MediaPlayer...")
+                val player = factory.mediaPlayers().newMediaPlayer()
+                mediaPlayer = player
+
+                // 设置事件监听
+                player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
+                    override fun mediaPlayerReady(mediaPlayer: MediaPlayer) {
+                        log("VLCJ: mediaPlayerReady")
+                        _playbackState.value = AppPlaybackState.READY
+                        _isPlaying.value = true
+                        isPaused = false
+                        if (!readyDeferred.isCompleted) {
+                            readyDeferred.complete(Result.success(Unit))
                         }
-                        LineEvent.Type.STOP -> {
-                            _isPlaying.value = false
-                        }
-                        else -> {}
                     }
+
+                    override fun playing(mediaPlayer: MediaPlayer) {
+                        log("VLCJ: playing")
+                        _playbackState.value = AppPlaybackState.READY
+                        _isPlaying.value = true
+                    }
+
+                    override fun paused(mediaPlayer: MediaPlayer) {
+                        log("VLCJ: paused")
+                        _isPlaying.value = false
+                    }
+
+                    override fun stopped(mediaPlayer: MediaPlayer) {
+                        log("VLCJ: stopped")
+                        _isPlaying.value = false
+                        _playbackState.value = AppPlaybackState.IDLE
+                    }
+
+                    override fun finished(mediaPlayer: MediaPlayer) {
+                        log("VLCJ: finished")
+                        _playbackState.value = AppPlaybackState.ENDED
+                        _isPlaying.value = false
+                    }
+
+                    override fun error(mediaPlayer: MediaPlayer) {
+                        val msg = "VLCJ播放错误"
+                        log("VLCJ: error")
+                        if (!readyDeferred.isCompleted) {
+                            readyDeferred.complete(Result.failure(RuntimeException(msg)))
+                        } else {
+                            _errorEvents.tryEmit(msg)
+                            _playbackState.value = AppPlaybackState.ERROR
+                        }
+                    }
+                })
+
+                log("Starting playback: ${item.uri}")
+                player.media().play(item.uri)
+                log("VLCJ play() called, waiting for ready...")
+            } catch (e: Exception) {
+                log("Failed to create/start VLCJ: ${e.message}")
+                if (!readyDeferred.isCompleted) {
+                    readyDeferred.complete(Result.failure(e))
                 }
             }
+        }
 
-            _playbackState.value = AppPlaybackState.READY
-            clip?.start()
-        } catch (e: UnsupportedAudioFileException) {
-            _errorEvents.tryEmit("不支持的音频格式: ${item.uri}")
-            _playbackState.value = AppPlaybackState.ERROR
+        // 等待播放就绪（超时 30 秒）
+        try {
+            val result = withTimeout(30_000L) { readyDeferred.await() }
+            result.fold(
+                onSuccess = { log("Playback started successfully") },
+                onFailure = { error ->
+                    log("Playback failed: ${error.message}")
+                    _errorEvents.tryEmit("播放失败: ${error.message}")
+                    _playbackState.value = AppPlaybackState.ERROR
+                }
+            )
         } catch (e: Exception) {
-            _errorEvents.tryEmit("加载媒体失败: ${e.message}")
+            log("Timeout waiting for playback: ${e.message}")
+            _errorEvents.tryEmit("播放启动超时")
             _playbackState.value = AppPlaybackState.ERROR
         }
     }
 
+    private fun releaseMediaPlayer() {
+        try {
+            mediaPlayer?.release()
+        } catch (_: Exception) { }
+        try {
+            mediaPlayerFactory?.release()
+        } catch (_: Exception) { }
+        mediaPlayer = null
+        mediaPlayerFactory = null
+    }
+
     override suspend fun play() {
-        clip?.start()
+        log("play()")
+        isPaused = false
+        try {
+            mediaPlayer?.controls()?.play()
+            _isPlaying.value = true
+        } catch (e: Exception) {
+            log("play() error: ${e.message}")
+        }
     }
 
     override suspend fun pause() {
-        clip?.stop()
+        log("pause()")
+        isPaused = true
+        try {
+            mediaPlayer?.controls()?.pause()
+            _isPlaying.value = false
+        } catch (e: Exception) {
+            log("pause() error: ${e.message}")
+        }
+    }
+
+    override suspend fun stop() {
+        log("stop()")
+        try {
+            mediaPlayer?.controls()?.stop()
+        } catch (_: Exception) { }
+        _isPlaying.value = false
+        _playbackState.value = AppPlaybackState.IDLE
     }
 
     override suspend fun skipToNext() {
+        log("skipToNext: currentIndex=$currentIndex, playlist.size=${currentPlaylist.size}")
         if (currentPlaylist.isNotEmpty() && currentIndex < currentPlaylist.size - 1) {
             currentIndex++
             loadAndPlay(currentPlaylist[currentIndex])
@@ -119,28 +233,16 @@ class DesktopRadioPlayerController : IPlayerController {
     }
 
     override suspend fun skipToPrevious() {
+        log("skipToPrevious: currentIndex=$currentIndex, playlist.size=${currentPlaylist.size}")
         if (currentPlaylist.isNotEmpty() && currentIndex > 0) {
             currentIndex--
             loadAndPlay(currentPlaylist[currentIndex])
         }
     }
 
-    override suspend fun stop() {
-        clip?.stop()
-        clip?.framePosition = 0
-        _isPlaying.value = false
-        _playbackState.value = AppPlaybackState.IDLE
-    }
-
     override fun release() {
-        releaseCurrentPlayer()
+        log("release()")
+        releaseMediaPlayer()
         scope.cancel()
-    }
-
-    private fun releaseCurrentPlayer() {
-        clip?.close()
-        clip = null
-        audioStream?.close()
-        audioStream = null
     }
 }

@@ -18,6 +18,7 @@ import com.example.kmp_demo.features.domestic.ui.DomesticHomeScreen
 import com.example.kmp_demo.features.domestic.ui.DomesticSearchScreen
 import com.example.kmp_demo.features.domestic.ui.player.DomesticPlayerScreen
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 /**
  * 国内影视板块路由协议。
@@ -75,7 +76,14 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
             route = DomesticRoutes.detail,
             arguments = listOf(navArgument("title") { type = NavType.StringType })
         ) { entry ->
+            // 从 NavBackStackEntry 提取 title，通过 parametersOf 传入 ViewModel
+            val args = entry.arguments ?: return@composable
+            val title = NavType.StringType.get(args, "title")?.decodeNavParam() ?: return@composable
+            val viewModel: DomesticDetailViewModel = koinViewModel(
+                parameters = { parametersOf(title) }
+            )
             DomesticDetailScreen(
+                viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onPlay = { url, title, episodes ->
                     // 通过共享 ViewModel 缓存剧集列表，避免序列化到路由参数

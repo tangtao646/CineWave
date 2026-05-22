@@ -1,6 +1,5 @@
 package com.example.kmp_demo.features.film.ui
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.example.kmp_demo.core.*
 import com.example.kmp_demo.core.player.domain.EpisodeInfo
@@ -41,15 +40,18 @@ class FilmDetailContract {
 
 /**
  * 电影详情页 ViewModel
+ *
+ * 跨平台通用，不依赖任何平台特定类（如 SavedStateHandle）。
+ * movieId 由各平台通过构造函数直接传入：
+ * - Android：从 Navigation Compose 的 SavedStateHandle 提取后传入
+ * - Desktop：从导航参数直接传入
  */
 class FilmDetailViewModel(
     private val repository: FilmRepository,
-    savedStateHandle: SavedStateHandle
+    private val movieId: Int,
 ) : BaseMviViewModel<FilmDetailContract.State, FilmDetailContract.Intent, FilmDetailContract.Effect>(
     initialState = FilmDetailContract.State()
 ) {
-
-    private val movieId: Int = checkNotNull(savedStateHandle["movieId"])
 
     /**
      * 剧集列表缓存，供播放器页通过共享 ViewModel 读取。
