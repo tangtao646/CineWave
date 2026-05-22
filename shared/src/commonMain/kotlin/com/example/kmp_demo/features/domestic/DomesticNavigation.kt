@@ -92,8 +92,9 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
                 navArgument("title") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val url = backStackEntry.arguments?.getString("url")?.decodeNavParam() ?: ""
-            val title = backStackEntry.arguments?.getString("title")?.decodeNavParam() ?: ""
+            val args = backStackEntry.arguments ?: return@composable
+            val url = NavType.StringType[args, "url"]?.decodeNavParam() ?: ""
+            val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: ""
             DomesticPlayerScreen(
                 initialUrl = url,
                 seriesTitle = title,
@@ -110,8 +111,9 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
                 navArgument("title") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val url = backStackEntry.arguments?.getString("url")?.decodeNavParam() ?: ""
-            val title = backStackEntry.arguments?.getString("title")?.decodeNavParam() ?: ""
+            val args = backStackEntry.arguments!!
+            val url = NavType.StringType.get(args, "url")?.decodeNavParam() ?: ""
+            val title = NavType.StringType.get(args, "title")?.decodeNavParam() ?: ""
 
             // 通过共享 ViewModel 获取剧集列表
             // 详情页和播放器页在同一个导航图内，koinViewModel() 默认按 NavBackStackEntry 作用域，
@@ -122,7 +124,8 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
             val detailViewModel: DomesticDetailViewModel? = parentEntry?.let {
                 koinViewModel(viewModelStoreOwner = it)
             }
-            val episodes by detailViewModel?.episodesCache?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
+            val episodes by detailViewModel?.episodesCache?.collectAsState()
+                ?: remember { mutableStateOf(emptyList()) }
 
             DomesticPlayerScreen(
                 initialUrl = url,

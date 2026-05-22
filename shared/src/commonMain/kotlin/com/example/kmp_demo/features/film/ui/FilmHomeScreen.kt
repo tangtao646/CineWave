@@ -143,7 +143,6 @@ fun FilmHomeScreen(
                 contentPadding = PaddingValues(8.dp),
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(bottom = LocalScaffoldPadding.current.calculateBottomPadding())
             ) {
                 items(
                     count = movies.itemCount,

@@ -1,6 +1,5 @@
 package com.example.kmp_demo.core.data.remote
 
-import android.util.Log
 import app.cash.paging.ExperimentalPagingApi
 import app.cash.paging.LoadType
 import app.cash.paging.PagingState

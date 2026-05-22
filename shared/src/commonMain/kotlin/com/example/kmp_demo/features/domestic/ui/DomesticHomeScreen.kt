@@ -136,7 +136,7 @@ fun DomesticHomeScreen(
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 contentPadding = PaddingValues(8.dp),
-                modifier = Modifier.fillMaxSize().padding(bottom = LocalScaffoldPadding.current.calculateBottomPadding())
+                modifier = Modifier.fillMaxSize()
             ) {
                 items(
                     count = mediaItems.itemCount,

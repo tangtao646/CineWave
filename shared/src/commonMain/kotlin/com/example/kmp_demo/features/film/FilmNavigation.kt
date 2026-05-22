@@ -86,8 +86,9 @@ fun NavGraphBuilder.filmGraph(
                 navArgument("title") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val encodedUrl = backStackEntry.arguments?.getString("url") ?: ""
-            val encodedTitle = backStackEntry.arguments?.getString("title") ?: ""
+            val args = backStackEntry.arguments ?: return@composable
+            val encodedUrl = NavType.StringType[args, "url"] ?: ""
+            val encodedTitle = NavType.StringType[args, "title"] ?: ""
 
             val url = encodedUrl.decodeNavParam()
             val title = encodedTitle.decodeNavParam()

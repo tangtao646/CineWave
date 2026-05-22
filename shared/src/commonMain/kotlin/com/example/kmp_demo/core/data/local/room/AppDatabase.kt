@@ -41,6 +41,6 @@ fun getRoomDatabase(
     builder: RoomDatabase.Builder<AppDatabase>
 ): AppDatabase {
     return builder
-        .fallbackToDestructiveMigration()
+        .fallbackToDestructiveMigration(false)
         .build()
 }

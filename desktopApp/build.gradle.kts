@@ -11,8 +11,17 @@ dependencies {
 
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutinesSwing)
-
     implementation(libs.compose.uiToolingPreview)
+
+    // Koin DI
+    implementation(libs.koin.core)
+
+    // Navigation Compose 在 Desktop 上需要 savedstate 兼容库
+    implementation("org.jetbrains.androidx.savedstate:savedstate:1.3.6")
+    implementation("org.jetbrains.androidx.savedstate:savedstate-compose:1.3.6")
+    implementation(libs.androidx.lifecycle.viewmodel.compose.desktop)
+    implementation(libs.androidx.paging.common.desktop)
+    implementation(libs.androidx.paging.compose.desktop)
 }
 
 compose.desktop {

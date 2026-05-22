@@ -1,94 +1,26 @@
 package com.example.kmp_demo
 
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Tv
-import androidx.compose.material.icons.filled.Face
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import coil3.PlatformContext
-import coil3.SingletonImageLoader
-import coil3.compose.LocalPlatformContext
-import com.example.kmp_demo.core.initializeCoil
-import com.example.kmp_demo.core.security.SensitiveWordFilter
-import com.example.kmp_demo.core.security.SensitiveWordLoader
-import com.example.kmp_demo.features.domestic.DomesticRoutes
-import com.example.kmp_demo.features.domestic.domesticGraph
-import com.example.kmp_demo.features.film.FilmRoutes
-import com.example.kmp_demo.features.film.filmGraph
-import com.example.kmp_demo.features.radio.RadioRoutes
-import com.example.kmp_demo.features.radio.radioGraph
-import org.koin.compose.KoinContext
-import org.koin.compose.koinInject
 
 val LocalScaffoldPadding = staticCompositionLocalOf { PaddingValues(0.dp) }
 
-@Composable
-fun App() {
-    // ✅ 核心改动：删掉外层的 KoinApplication，只保留 KoinContext。
-    // 它会自动拾取你在 Android MainApplication 里已经初始化好的全局 Koin 上下文
-    KoinContext {
-        MaterialTheme {
-            val navController = rememberNavController()
-            val navBackStackEntry by navController.currentBackStackEntryAsState()
-
-            val platformContext: PlatformContext = LocalPlatformContext.current
-            LaunchedEffect(platformContext) {
-                SingletonImageLoader.setSafe { context ->
-                    initializeCoil(context)
-                }
-            }
-
-            val sensitiveWordFilter = koinInject<SensitiveWordFilter>()
-            LaunchedEffect(Unit) {
-                val loader = SensitiveWordLoader(sensitiveWordFilter)
-                loader.loadAsync()
-            }
-
-            Scaffold(
-                bottomBar = {
-                    val currentRoute = navBackStackEntry?.destination?.route
-                    val shouldShowBottomBar = currentRoute?.contains("_player") == false
-                    if (shouldShowBottomBar) {
-                        AppBottomBar(navController = navController)
-                    }
-                }
-            ) { innerPadding ->
-                CompositionLocalProvider(LocalScaffoldPadding provides innerPadding) {
-                    NavHost(
-                        navController = navController,
-                        startDestination = RadioRoutes.graph,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        radioGraph(navController)
-                        filmGraph(navController)
-                        domesticGraph(navController)
-                    }
-                }
-            }
-        }
-    }
-}
 
 sealed class BottomBarScreen(val route: String, val title: String, val icon: ImageVector) {
     object Radio : BottomBarScreen(RadioRoutes.graph, "电台", Icons.Default.Radio)
@@ -112,12 +44,25 @@ fun AppBottomBar(navController: NavHostController) {
                 onClick = {
                     navController.navigate(screen.route) {
                         popUpTo(navController.graph.findStartDestination().route ?: return@navigate) {
-                            saveState = true
+                            saveState = false
                         }
                         launchSingleTop = true
-                        restoreState = true
+                        restoreState = false
                     }
                 })
         }
     }
+}
+
+// 路由常量（供 commonMain 使用）
+object RadioRoutes {
+    const val graph = "radio_graph"
+}
+
+object FilmRoutes {
+    const val graph = "film_graph"
+}
+
+object DomesticRoutes {
+    const val graph = "domestic_graph"
 }
