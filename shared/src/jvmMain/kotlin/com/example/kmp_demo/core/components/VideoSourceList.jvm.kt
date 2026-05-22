@@ -1,5 +1,6 @@
 package com.example.kmp_demo.core.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,6 +39,7 @@ actual fun VideoSourceListContent(
         // FlowRow 自动换行排列，每项占约 1/3 宽度
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
+            maxItemsInEachRow = 8,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -58,7 +60,6 @@ private fun VideoSourceGridItem(
     onPlayClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val clipboardManager = LocalClipboardManager.current
 
     Card(
         modifier = modifier.padding(vertical = 4.dp),
@@ -69,64 +70,18 @@ private fun VideoSourceGridItem(
     ) {
         Column(
             modifier = Modifier
-                .padding(12.dp)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .clickable(onClick = onPlayClick),
         ) {
-            // 源名称
-            Text(
-                text = source.sourceSite,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
 
             // 质量和格式
             Text(
+                modifier = Modifier.padding(12.dp),
                 text = "${source.quality} • ${source.format.uppercase()}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // URL（截断显示）
-            Text(
-                text = source.url,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 操作按钮行
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = {
-                    clipboardManager.setText(AnnotatedString(source.url))
-                }) {
-                    Icon(
-                        Icons.Default.ContentCopy,
-                        contentDescription = "复制",
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                IconButton(onClick = onPlayClick) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = "播放",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
         }
     }
 }

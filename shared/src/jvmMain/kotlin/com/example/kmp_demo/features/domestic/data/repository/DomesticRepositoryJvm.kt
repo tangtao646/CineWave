@@ -56,9 +56,12 @@ class DomesticRepositoryJvm(
 
     override suspend fun getDetailMeta(title: String): Result<DomesticMedia> {
         return try {
-            val apiItem = domesticApi.searchFirstMatch(title)
-            if (apiItem != null) {
-                Result.success(apiItem.toDomesticMedia())
+            val matchResult = domesticApi.searchFirstMatch(title)
+            if (matchResult != null) {
+                val media = matchResult.item.toDomesticMedia()
+                // 将相对路径的封面图拼接为完整 URL
+                val resolvedCoverUrl = resolveCoverUrl(media.coverUrl, matchResult.siteBaseUrl)
+                Result.success(media.copy(coverUrl = resolvedCoverUrl))
             } else {
                 Result.success(
                     DomesticMedia(
@@ -84,6 +87,32 @@ class DomesticRepositoryJvm(
             searchEngine.search(title).flatMap { it.videoSources }
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * 解析封面图 URL。
+     *
+     * 资源站返回的 vod_pic 可能是相对路径（如 "/upload/vod/xxx.jpg"），
+     * 需要拼接站点的 base URL 才能形成完整 URL。
+     * 如果已经是完整 URL（以 http:// 或 https:// 开头），则直接返回。
+     *
+     * @param coverUrl 原始封面图 URL（可能为相对路径）
+     * @param siteBaseUrl 来源站点的 base URL（如 "https://example.com"）
+     * @return 完整的封面图 URL
+     */
+    private fun resolveCoverUrl(coverUrl: String?, siteBaseUrl: String): String? {
+        if (coverUrl == null || coverUrl.isBlank()) return null
+        // 已经是完整 URL
+        if (coverUrl.startsWith("http://") || coverUrl.startsWith("https://")) {
+            return coverUrl
+        }
+        // 相对路径，拼接站点的 base URL
+        val baseUrl = siteBaseUrl.trimEnd('/')
+        return if (coverUrl.startsWith("/")) {
+            "$baseUrl$coverUrl"
+        } else {
+            "$baseUrl/$coverUrl"
         }
     }
 }
