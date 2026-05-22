@@ -376,3 +376,9 @@
 [21:31:45.929] === DesktopRadioPlayerController init ===
 [21:31:46.672] NativeDiscovery: found=true
 [21:31:46.672] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[21:35:00.036] === DesktopRadioPlayerController init ===
+[21:35:00.178] NativeDiscovery: found=true
+[21:35:00.178] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[21:47:33.449] === DesktopRadioPlayerController init ===
+[21:47:34.726] NativeDiscovery: found=true
+[21:47:34.726] VLC path: /Applications/VLC.app/Contents/MacOS/lib
