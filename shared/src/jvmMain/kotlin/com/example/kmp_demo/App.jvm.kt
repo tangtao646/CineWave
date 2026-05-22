@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Radio
@@ -29,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.DoneSegment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import coil3.PlatformContext
@@ -37,11 +37,18 @@ import coil3.compose.LocalPlatformContext
 import com.example.kmp_demo.core.initializeCoil
 import com.example.kmp_demo.core.security.SensitiveWordFilter
 import com.example.kmp_demo.core.security.SensitiveWordLoader
+import com.example.kmp_demo.features.domestic.DomesticRoutes
+import com.example.kmp_demo.features.domestic.ui.DomesticDetailScreen
 import com.example.kmp_demo.features.domestic.ui.DomesticHomeScreen
+import com.example.kmp_demo.features.domestic.ui.DomesticSearchScreen
+import com.example.kmp_demo.features.film.FilmRoutes
 import com.example.kmp_demo.features.film.ui.FilmHomeScreen
+import com.example.kmp_demo.features.radio.RadioRoutes
 import com.example.kmp_demo.features.radio.ui.components.MiniPlayerBar
 import com.example.kmp_demo.features.radio.ui.list.RadioListScreen
 import com.example.kmp_demo.features.radio.ui.list.RadioListViewModel
+import com.example.kmp_demo.features.radio.ui.player.PlayerDetailScreen
+import com.example.kmp_demo.features.radio.ui.search.RadioSearchScreen
 import org.koin.compose.KoinContext
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
@@ -61,7 +68,8 @@ import org.koin.compose.viewmodel.koinViewModel
 fun App() {
     KoinContext {
         MaterialTheme {
-            var currentScreen by remember { mutableStateOf("radio") }
+            // 当前路由，初始为电台列表页
+            var currentRoute by remember { mutableStateOf(RadioRoutes.list) }
 
             val platformContext: PlatformContext = LocalPlatformContext.current
             LaunchedEffect(platformContext) {
@@ -76,17 +84,29 @@ fun App() {
                 loader.loadAsync()
             }
 
+            // 判断当前是否在底部导航的主 tab 页（用于控制底部栏显示/隐藏）
+            val isMainTab = currentRoute in listOf(
+                RadioRoutes.list,
+                FilmRoutes.home,
+                DomesticRoutes.home
+            )
+
             Scaffold(
                 bottomBar = {
-                    DesktopBottomBar(
-                        currentScreen = currentScreen,
-                        onNavigate = { screen -> currentScreen = screen }
-                    )
+                    // 只在主 tab 页显示底部导航栏
+                    if (isMainTab) {
+                        DesktopBottomBar(
+                            currentScreen = currentRoute,
+                            onNavigate = { screen -> currentRoute = screen }
+                        )
+                    }
                 }
             ) { innerPadding ->
                 CompositionLocalProvider(LocalScaffoldPadding provides innerPadding) {
-                    when (currentScreen) {
-                        "radio" -> {
+                    // 根据当前路由显示对应的页面
+                    when {
+                        // === 电台板块 ===
+                        currentRoute == RadioRoutes.list -> {
                             val viewModel: RadioListViewModel = koinViewModel()
                             Box(
                                 modifier = Modifier
@@ -95,8 +115,8 @@ fun App() {
                             ) {
                                 RadioListScreen(
                                     viewModel = viewModel,
-                                    onNavigateToSearch = { /* TODO */ },
-                                    onNavigateToPlayer = { /* TODO */ }
+                                    onNavigateToSearch = { currentRoute = RadioRoutes.search },
+                                    onNavigateToPlayer = { currentRoute = RadioRoutes.player }
                                 )
 
                                 Box(
@@ -104,23 +124,55 @@ fun App() {
                                 ) {
                                     MiniPlayerBar(
                                         playerManager = viewModel.playerManager,
-                                        onClick = { /* TODO */ }
+                                        onClick = { currentRoute = RadioRoutes.player }
                                     )
                                 }
                             }
                         }
-                        "film" -> {
+
+                        currentRoute == RadioRoutes.search -> {
+                            RadioSearchScreen(
+                                viewModel = koinViewModel(),
+                                onBack = { currentRoute = RadioRoutes.list },
+                                onNavigateToPlayer = { currentRoute = RadioRoutes.player }
+                            )
+                        }
+
+                        currentRoute == RadioRoutes.player -> {
+                            val listViewModel: RadioListViewModel = koinViewModel()
+                            PlayerDetailScreen(
+                                playerManager = listViewModel.playerManager,
+                                onClose = { currentRoute = RadioRoutes.list }
+                            )
+                        }
+
+                        // === 电影板块 ===
+                        currentRoute == FilmRoutes.home -> {
                             FilmHomeScreen(
-                                onSearchClick = { /* TODO */ },
-                                onMovieClick = { /* TODO */ }
+                                onSearchClick = { currentRoute = FilmRoutes.search },
+                                onMovieClick = { currentRoute = FilmRoutes.detail }
                             )
                         }
-                        "domestic" -> {
+
+                        // === 国产板块 ===
+                        currentRoute == DomesticRoutes.home -> {
                             DomesticHomeScreen(
-                                onSearchClick = { /* TODO */ },
-                                onMediaClick = { /* TODO */ }
+                                onSearchClick = { currentRoute = DomesticRoutes.search },
+                                onMediaClick = { media ->
+                                    currentRoute = DomesticRoutes.detail(media.title)
+                                }
                             )
                         }
+
+                        currentRoute == DomesticRoutes.search -> {
+                            DomesticSearchScreen(onBackClick = {
+
+                            }, onMediaClick = {
+
+                            })
+                        }
+
+
                     }
                 }
             }
@@ -141,9 +193,9 @@ fun DesktopBottomBar(
     onNavigate: (String) -> Unit
 ) {
     val screens = listOf(
-        DesktopScreen("radio", "电台", Icons.Default.Radio),
-        DesktopScreen("film", "电影", Icons.Default.Face),
-        DesktopScreen("domestic", "国产", Icons.Default.Tv)
+        DesktopScreen(RadioRoutes.list, "电台", Icons.Default.Radio),
+        DesktopScreen(FilmRoutes.home, "电影", Icons.Default.Face),
+        DesktopScreen(DomesticRoutes.home, "国产", Icons.Default.Tv)
     )
 
     Surface(
