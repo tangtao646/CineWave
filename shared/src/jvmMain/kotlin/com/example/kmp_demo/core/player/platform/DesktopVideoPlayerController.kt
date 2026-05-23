@@ -209,6 +209,7 @@ class DesktopVideoPlayerController : IPlayerController {
     }
 
     override suspend fun seekTo(positionMs: Long) {
+        _playbackState.value = VideoPlaybackState.BUFFERING
         mediaPlayer.controls().setTime(positionMs)
     }
 
@@ -262,9 +263,10 @@ private class RenderCallbackImpl(
 
             nativeBuffer.rewind()
             for (i in pixels.indices) {
-                val r = nativeBuffer.get().toInt() and 0xFF
-                val g = nativeBuffer.get().toInt() and 0xFF
+                // RV32 在 little-endian 系统（macOS Intel/Apple Silicon）上是 BGRA 布局
                 val b = nativeBuffer.get().toInt() and 0xFF
+                val g = nativeBuffer.get().toInt() and 0xFF
+                val r = nativeBuffer.get().toInt() and 0xFF
                 val a = nativeBuffer.get().toInt() and 0xFF
                 pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
             }
