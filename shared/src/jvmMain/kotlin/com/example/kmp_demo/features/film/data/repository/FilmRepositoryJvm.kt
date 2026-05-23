@@ -4,6 +4,7 @@ import app.cash.paging.Pager
 import app.cash.paging.PagingConfig
 import app.cash.paging.PagingData
 import com.example.kmp_demo.core.data.paging.InMemoryPagingSource
+import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
 import com.example.kmp_demo.features.film.data.remote.FilmApi
 import com.example.kmp_demo.features.film.data.remote.FilmPagingSource
 import com.example.kmp_demo.features.film.data.remote.SnifferDataSource
@@ -38,7 +39,11 @@ class FilmRepositoryJvm(
             pagingSourceFactory = {
                 InMemoryPagingSource { page, pageSize ->
                     val response = api.getPopularMovies(page = page)
-                    response.results.map { it.toMovie() }
+                    val entities = response.results.map { it.toMovie() }
+                    FilmJvmFetchResult(
+                        entities = entities,
+                        isEndOfPagination = entities.isEmpty() || page >= response.totalPages
+                    )
                 }
             }
         ).flow
@@ -64,7 +69,11 @@ class FilmRepositoryJvm(
                         page = page,
                         sortBy = sortOrder.value
                     )
-                    response.results.map { it.toMovie() }
+                    val entities = response.results.map { it.toMovie() }
+                    FilmJvmFetchResult(
+                        entities = entities,
+                        isEndOfPagination = entities.isEmpty() || page >= response.totalPages
+                    )
                 }
             }
         ).flow
@@ -91,4 +100,19 @@ class FilmRepositoryJvm(
     override suspend fun searchVideoSources(title: String): List<VideoSource> {
         return snifferDataSource.searchSources(title)
     }
+}
+
+/**
+ * Film 模块 JVM 平台的分页结果。
+ *
+ * 与 commonMain 中的 [com.example.kmp_demo.features.film.data.remote.FilmRemoteFetchResult] 保持相同的分页计算逻辑：
+ * - nextKey = page + entities.size（按实际返回数量推进）
+ * - isEndOfPagination = 数据为空或已到最后一页
+ */
+private data class FilmJvmFetchResult(
+    override val entities: List<Movie>,
+    override val isEndOfPagination: Boolean
+) : IRemoteFetchResult<Movie> {
+    override fun computeNextKey(page: Int, pageSize: Int): Int =
+        page + (entities.size.coerceAtLeast(pageSize))
 }

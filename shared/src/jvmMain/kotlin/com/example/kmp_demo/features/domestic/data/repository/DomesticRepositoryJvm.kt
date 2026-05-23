@@ -3,8 +3,8 @@ package com.example.kmp_demo.features.domestic.data.repository
 import app.cash.paging.Pager
 import app.cash.paging.PagingConfig
 import app.cash.paging.PagingData
-import app.cash.paging.map
 import com.example.kmp_demo.core.data.paging.InMemoryPagingSource
+import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
 import com.example.kmp_demo.core.videosource.domain.VideoSource
 import com.example.kmp_demo.features.domestic.data.remote.DomesticApi
 import com.example.kmp_demo.features.domestic.data.remote.DomesticSearchEngine
@@ -40,7 +40,11 @@ class DomesticRepositoryJvm(
                 InMemoryPagingSource { page, pageSize ->
                     val typeParam = if (typeName == "全部") null else typeName
                     val items = domesticApi.getRecentMedia(page = page, typeName = typeParam)
-                    items.map { it.toDomesticMedia() }
+                    val entities = items.map { it.toDomesticMedia() }
+                    DomesticJvmFetchResult(
+                        entities = entities,
+                        isEndOfPagination = entities.isEmpty()
+                    )
                 }
             }
         ).flow
@@ -115,4 +119,18 @@ class DomesticRepositoryJvm(
             "$baseUrl/$coverUrl"
         }
     }
+}
+
+/**
+ * Domestic 模块 JVM 平台的分页结果。
+ *
+ * 与 commonMain 中的 [com.example.kmp_demo.features.domestic.data.remote.DomesticRemoteFetchResult] 保持相同的分页计算逻辑：
+ * - nextKey = page + 1（每次递增 1 页）
+ * - isEndOfPagination = 数据为空
+ */
+private data class DomesticJvmFetchResult(
+    override val entities: List<DomesticMedia>,
+    override val isEndOfPagination: Boolean
+) : IRemoteFetchResult<DomesticMedia> {
+    override fun computeNextKey(page: Int, pageSize: Int): Int = page + 1
 }
