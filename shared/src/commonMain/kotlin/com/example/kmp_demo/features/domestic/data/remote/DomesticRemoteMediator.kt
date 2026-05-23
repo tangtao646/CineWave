@@ -2,6 +2,7 @@ package com.example.kmp_demo.features.domestic.data.remote
 
 import app.cash.paging.ExperimentalPagingApi
 import com.example.kmp_demo.core.data.remote.BasePagingRemoteMediator
+import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
 import com.example.kmp_demo.features.domestic.data.local.DomesticLocalDataSource
 import com.example.kmp_demo.features.domestic.data.local.DomesticMediaEntity
 
@@ -19,26 +20,26 @@ import com.example.kmp_demo.features.domestic.data.local.DomesticMediaEntity
 class DomesticRemoteMediator(
     private val typeName: String,
     localDataSource: DomesticLocalDataSource,
-    private val fetchRemote: suspend (page: Int, pageSize: Int) -> RemoteFetchResult<DomesticMediaEntity>,
+    private val fetchRemote: suspend (page: Int, pageSize: Int) -> DomesticRemoteFetchResult,
 ) : BasePagingRemoteMediator<DomesticMediaEntity, String>(
     baseLocalDataSource = localDataSource
 ) {
     override val key: String get() = "domestic_$typeName"
     override val initialPage: Int get() = 1
 
-    override fun computeNextKey(
-        page: Int,
-        pageSize: Int,
-        result: RemoteFetchResult<DomesticMediaEntity>
-    ): Int {
-        return page + 1
-    }
 
     override suspend fun fetchRemoteData(
         key: String,
         page: Int,
         pageSize: Int,
-    ): RemoteFetchResult<DomesticMediaEntity> {
+    ): IRemoteFetchResult<DomesticMediaEntity> {
         return fetchRemote(page, pageSize)
     }
+}
+
+data class DomesticRemoteFetchResult(
+    override val entities: List<DomesticMediaEntity>,
+    override val isEndOfPagination: Boolean
+) : IRemoteFetchResult<DomesticMediaEntity> {
+    override fun computeNextKey(page: Int, pageSize: Int): Int = page + 1
 }
