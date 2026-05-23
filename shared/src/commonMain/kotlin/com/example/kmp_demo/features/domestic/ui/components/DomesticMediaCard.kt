@@ -14,6 +14,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.example.kmp_demo.core.components.shimmer
+import com.example.kmp_demo.core.components.skeletonAspectRatio
 import com.example.kmp_demo.features.domestic.domain.model.DomesticMedia
 
 /**
@@ -111,7 +112,7 @@ fun DomesticMediaCard(
 }
 
 /**
- * 首页瀑布流骨架屏卡片 — 模仿 DomesticMediaCard 布局。
+ * 首页瀑布流骨架屏卡片 — 正方形比例，适配 Desktop 网格布局。
  */
 @Composable
 fun DomesticSkeletonItem() {
@@ -123,11 +124,11 @@ fun DomesticSkeletonItem() {
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column {
-            // 封面图骨架
+            // 封面图骨架 — 使用平台相关的宽高比
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp)
+                    .aspectRatio(skeletonAspectRatio())
                     .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     .shimmer()
             )

@@ -28,6 +28,7 @@ import com.example.kmp_demo.core.components.safeContent
 import com.example.kmp_demo.features.film.data.remote.dto.GenreDto
 import com.example.kmp_demo.features.film.domain.model.MovieSortOrder
 import com.example.kmp_demo.core.components.gridColumns
+import com.example.kmp_demo.core.components.skeletonCount
 import com.example.kmp_demo.features.film.ui.components.MovieCard
 import com.example.kmp_demo.features.film.ui.components.MovieSkeletonItem
 import org.koin.compose.viewmodel.koinViewModel
@@ -135,7 +136,7 @@ fun FilmHomeScreen(
                     columns = GridCells.Fixed(gridColumns()),
                     contentPadding = PaddingValues(8.dp)
                 ) {
-                    items(6) { MovieSkeletonItem() }
+                    items(skeletonCount()) { MovieSkeletonItem() }
                 }
             }
         ) {

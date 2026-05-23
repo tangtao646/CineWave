@@ -32,6 +32,7 @@ fun FilmPlayerScreen(
     seriesTitle: String,
     episodes: List<EpisodeInfo> = emptyList(),
     onBack: () -> Unit,
+    onFullScreenChange: ((Boolean) -> Unit)? = null,
 ) {
     // 找到初始 URL 对应的索引，找不到则从第 0 集开始
     var currentIndex by remember(initialUrl) {
@@ -66,6 +67,7 @@ fun FilmPlayerScreen(
             url = currentEpisode?.url ?: initialUrl,
             title = displayTitle,
             onBack = onBack,
+            onFullScreenChange = onFullScreenChange,
             controls = { state, onAction ->
                 VideoPlayerControls(
                     state = state,
