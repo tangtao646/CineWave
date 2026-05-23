@@ -118,9 +118,8 @@ kotlin {
             implementation("org.jetbrains.androidx.savedstate:savedstate:1.3.6")
             implementation("org.jetbrains.androidx.savedstate:savedstate-compose:1.3.6")
 
-            // VLCJ — Desktop 电台播放器
             // 需要用户安装 VLC: brew install vlc
-            implementation("uk.co.caprica:vlcj:4.8.2")
+            implementation(libs.vlcj)
         }
     }
 }

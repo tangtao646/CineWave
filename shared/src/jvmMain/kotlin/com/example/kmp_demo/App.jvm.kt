@@ -36,6 +36,7 @@ import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
 import com.example.kmp_demo.core.initializeCoil
 import com.example.kmp_demo.core.navigation.decodeNavParam
+import com.example.kmp_demo.core.navigation.encodeNavParam
 import com.example.kmp_demo.core.security.SensitiveWordFilter
 import com.example.kmp_demo.core.security.SensitiveWordLoader
 import com.example.kmp_demo.features.domestic.DomesticRoutes
@@ -186,17 +187,20 @@ fun App() {
                                 viewModel = viewModel,
                                 onBackClick = { currentRoute = FilmRoutes.home },
                                 onNavigateToPlayer = { url, title ->
-                                    currentRoute = "film_player/$url/$title"
+                                    currentRoute = "film_player/${url.encodeNavParam()}/${title.encodeNavParam()}"
                                 }
                             )
                         }
 
                         // 电影播放器页
                         currentRoute.startsWith("film_player/") -> {
-                            val parts = currentRoute.removePrefix("film_player/").split("/", limit = 2)
-                            if (parts.size < 2) return@CompositionLocalProvider
-                            val url = parts[0]
-                            val title = parts[1]
+                            val encoded = currentRoute.removePrefix("film_player/")
+                            val slashIndex = encoded.indexOf("/")
+                            if (slashIndex == -1) return@CompositionLocalProvider
+                            val encodedUrl = encoded.substring(0, slashIndex)
+                            val encodedTitle = encoded.substring(slashIndex + 1)
+                            val url = encodedUrl.decodeNavParam()
+                            val title = encodedTitle.decodeNavParam()
                             FilmPlayerScreen(
                                 initialUrl = url,
                                 seriesTitle = title,
@@ -237,17 +241,20 @@ fun App() {
                                 viewModel = viewModel,
                                 onBack = { currentRoute = DomesticRoutes.home },
                                 onPlay = { url, title, episodes ->
-                                    currentRoute = "domestic_player/$url/$title"
+                                    currentRoute = "domestic_player/${url.encodeNavParam()}/${title.encodeNavParam()}"
                                 }
                             )
                         }
 
                         // 国产播放器页
                         currentRoute.startsWith("domestic_player/") -> {
-                            val parts = currentRoute.removePrefix("domestic_player/").split("/", limit = 2)
-                            if (parts.size < 2) return@CompositionLocalProvider
-                            val url = parts[0]
-                            val title = parts[1]
+                            val encoded = currentRoute.removePrefix("domestic_player/")
+                            val slashIndex = encoded.indexOf("/")
+                            if (slashIndex == -1) return@CompositionLocalProvider
+                            val encodedUrl = encoded.substring(0, slashIndex)
+                            val encodedTitle = encoded.substring(slashIndex + 1)
+                            val url = encodedUrl.decodeNavParam()
+                            val title = encodedTitle.decodeNavParam()
                             DomesticPlayerScreen(
                                 initialUrl = url,
                                 seriesTitle = title,

@@ -583,3 +583,15 @@
 [11:27:59.603] Timeout waiting for playback: Timed out waiting for 30000 ms
 [11:28:22.717] pause()
 [11:28:22.719] VLCJ: paused
+[11:52:59.394] === DesktopRadioPlayerController init ===
+[11:52:59.822] NativeDiscovery: found=true
+[11:52:59.822] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[12:09:37.768] === DesktopRadioPlayerController init ===
+[12:09:38.343] NativeDiscovery: found=true
+[12:09:38.344] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[12:16:20.971] === DesktopRadioPlayerController init ===
+[12:16:23.295] NativeDiscovery: found=true
+[12:16:23.295] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[12:27:30.411] === DesktopRadioPlayerController init ===
+[12:27:31.255] NativeDiscovery: found=true
+[12:27:31.255] VLC path: /Applications/VLC.app/Contents/MacOS/lib
