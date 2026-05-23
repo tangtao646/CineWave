@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.kmp_demo.core.player.domain.IPlayerController
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
-import com.example.kmp_demo.core.player.platform.VlcjVideoPlayerController
+import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -46,7 +46,7 @@ actual fun PlatformVideoPlayerScreen(
     onFullScreenChange: ((Boolean) -> Unit)?,
 ) {
     val controller: IPlayerController = koinInject()
-    val vlcjController = controller as VlcjVideoPlayerController
+    val vlcjController = controller as DesktopVideoPlayerController
 
     val uiState by controller.playbackState.collectAsState()
     val currentPosition by controller.currentPosition.collectAsState()

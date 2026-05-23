@@ -2,8 +2,8 @@ package com.example.kmp_demo.di
 
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.M3u8CacheInterceptor
+import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
 import com.example.kmp_demo.core.player.domain.IPlayerController as VideoPlayerController
-import com.example.kmp_demo.core.player.platform.VlcjVideoPlayerController
 import com.example.kmp_demo.features.radio.domain.player.IPlayerController as RadioPlayerController
 import com.example.kmp_demo.features.radio.player.DesktopRadioPlayerController
 import org.koin.core.module.Module
@@ -20,7 +20,6 @@ import org.koin.dsl.module
  * - M3U8 缓存拦截器
  */
 actual val platformModule: Module = module {
-    // ❌ 移除 Room Database — Desktop 不需要数据库缓存
 
     // === Disk Cache ===
     single<DiskLruCache> {
@@ -44,7 +43,7 @@ actual val platformModule: Module = module {
     // 每次创建新实例会创建新的 libvlc 实例，浪费资源。
     // PlatformVideoPlayerScreen 的 DisposableEffect 会在退出时调用 release()。
     single<VideoPlayerController> {
-        VideoPlayerController()
+        DesktopVideoPlayerController()
     }
 
 
