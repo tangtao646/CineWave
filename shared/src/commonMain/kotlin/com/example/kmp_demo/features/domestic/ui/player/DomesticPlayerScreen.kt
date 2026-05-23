@@ -34,7 +34,7 @@ import org.koin.compose.viewmodel.koinViewModel
 fun DomesticPlayerScreen(
     initialUrl: String,
     seriesTitle: String,
-    episodes: List<EpisodeInfo>,
+    episodes: List<EpisodeInfo> = emptyList(),
     onBack: () -> Unit,
 ) {
     // 找到初始 URL 对应的索引，找不到则从第 0 集开始

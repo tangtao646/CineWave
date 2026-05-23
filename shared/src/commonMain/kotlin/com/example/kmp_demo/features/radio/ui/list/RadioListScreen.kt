@@ -172,7 +172,7 @@ fun RadioListScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(stations.itemCount, key = stations.itemKey { it.uuid }) { index ->
+                        items(stations.itemCount, key = { index -> index }) { index ->
                             stations[index]?.let {
                                 val isCurrent = currentPlayingStation?.uuid == it.uuid
 
@@ -322,5 +322,3 @@ fun NewsSkeletonItem() {
             .shimmer())
     }
 }
-
-

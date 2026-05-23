@@ -41,9 +41,12 @@ actual val platformModule: Module = module {
     }
 
     // === Video Player Controller (ComposeMediaPlayer) ===
+    // 使用 factory 而非 single，因为每次进入播放页都需要新的实例
+    // PlatformVideoPlayerScreen 的 DisposableEffect 会释放实例
     single<VideoPlayerController> {
         DesktopVideoPlayerController()
     }
+
 
     // === Radio Player Controller (ComposeMediaPlayer) ===
     single<RadioPlayerController> {

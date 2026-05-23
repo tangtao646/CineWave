@@ -46,7 +46,9 @@ import com.example.kmp_demo.features.domestic.ui.DomesticSearchScreen
 import com.example.kmp_demo.features.film.FilmRoutes
 import com.example.kmp_demo.features.film.ui.FilmDetailScreen
 import com.example.kmp_demo.features.film.ui.FilmDetailViewModel
+import com.example.kmp_demo.features.domestic.ui.player.DomesticPlayerScreen
 import com.example.kmp_demo.features.film.ui.FilmHomeScreen
+import com.example.kmp_demo.features.film.ui.player.FilmPlayerScreen
 import com.example.kmp_demo.features.film.ui.search.FilmSearchScreen
 import com.example.kmp_demo.features.radio.RadioRoutes
 import com.example.kmp_demo.features.radio.ui.components.MiniPlayerBar
@@ -184,8 +186,21 @@ fun App() {
                                 viewModel = viewModel,
                                 onBackClick = { currentRoute = FilmRoutes.home },
                                 onNavigateToPlayer = { url, title ->
-                                    // TODO: 实现 Desktop 播放器导航
+                                    currentRoute = "film_player/$url/$title"
                                 }
+                            )
+                        }
+
+                        // 电影播放器页
+                        currentRoute.startsWith("film_player/") -> {
+                            val parts = currentRoute.removePrefix("film_player/").split("/", limit = 2)
+                            if (parts.size < 2) return@CompositionLocalProvider
+                            val url = parts[0]
+                            val title = parts[1]
+                            FilmPlayerScreen(
+                                initialUrl = url,
+                                seriesTitle = title,
+                                onBack = { currentRoute = FilmRoutes.home }
                             )
                         }
 
@@ -222,8 +237,21 @@ fun App() {
                                 viewModel = viewModel,
                                 onBack = { currentRoute = DomesticRoutes.home },
                                 onPlay = { url, title, episodes ->
-                                    // TODO: 实现 Desktop 播放器导航
+                                    currentRoute = "domestic_player/$url/$title"
                                 }
+                            )
+                        }
+
+                        // 国产播放器页
+                        currentRoute.startsWith("domestic_player/") -> {
+                            val parts = currentRoute.removePrefix("domestic_player/").split("/", limit = 2)
+                            if (parts.size < 2) return@CompositionLocalProvider
+                            val url = parts[0]
+                            val title = parts[1]
+                            DomesticPlayerScreen(
+                                initialUrl = url,
+                                seriesTitle = title,
+                                onBack = { currentRoute = DomesticRoutes.home }
                             )
                         }
                     }
