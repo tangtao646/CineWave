@@ -3,7 +3,7 @@ package com.example.kmp_demo.di
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.M3u8CacheInterceptor
 import com.example.kmp_demo.core.player.domain.IPlayerController as VideoPlayerController
-import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
+import com.example.kmp_demo.core.player.platform.VlcjVideoPlayerController
 import com.example.kmp_demo.features.radio.domain.player.IPlayerController as RadioPlayerController
 import com.example.kmp_demo.features.radio.player.DesktopRadioPlayerController
 import org.koin.core.module.Module
@@ -18,8 +18,6 @@ import org.koin.dsl.module
  * 提供 Desktop 上所有平台相关依赖的实现：
  * - 磁盘缓存
  * - M3U8 缓存拦截器
- * - 视频播放器（JavaFX MediaPlayer）
- * - 电台播放器（JavaFX MediaPlayer）
  */
 actual val platformModule: Module = module {
     // ❌ 移除 Room Database — Desktop 不需要数据库缓存
@@ -40,11 +38,13 @@ actual val platformModule: Module = module {
         )
     }
 
-    // === Video Player Controller (ComposeMediaPlayer) ===
-    // 使用 factory 而非 single，因为每次进入播放页都需要新的实例
-    // PlatformVideoPlayerScreen 的 DisposableEffect 会释放实例
+    // === Video Player Controller (VLCJ) ===
+    // 使用 VLCJ (libvlc) 实现桌面端视频播放，支持广泛的音视频格式。
+    // 使用 single 而非 factory，因为 VLCJ 的 MediaPlayerFactory 是重量级对象，
+    // 每次创建新实例会创建新的 libvlc 实例，浪费资源。
+    // PlatformVideoPlayerScreen 的 DisposableEffect 会在退出时调用 release()。
     single<VideoPlayerController> {
-        DesktopVideoPlayerController()
+        VideoPlayerController()
     }
 
 

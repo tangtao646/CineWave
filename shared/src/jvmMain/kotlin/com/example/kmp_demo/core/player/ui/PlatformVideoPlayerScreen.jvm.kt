@@ -10,28 +10,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.layout.ContentScale
 import com.example.kmp_demo.core.player.domain.IPlayerController
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
-import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
-import io.github.kdroidfilter.composemediaplayer.AudioMode
-import io.github.kdroidfilter.composemediaplayer.InitialPlayerState
-import io.github.kdroidfilter.composemediaplayer.VideoPlayerSurface
-import io.github.kdroidfilter.composemediaplayer.rememberVideoPlayerState
+import com.example.kmp_demo.core.player.platform.VlcjVideoPlayerController
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
 /**
- * Desktop 平台视频播放器屏幕 — 基于 ComposeMediaPlayer
+ * Desktop 平台视频播放器屏幕 — 基于 VLCJ (libvlc)。
  *
- * 使用 [VideoPlayerSurface] 渲染视频，底层在 macOS 上使用 AVFoundation，
- * 在 Windows/Linux 上使用 JavaFX MediaPlayer。
+ * 使用 [VlcjVideoSurface] 渲染视频，底层通过 VLCJ 调用 libvlc 实现硬件加速解码。
  *
- * 优势：
- * - 纯 Compose 实现，无需 Swing/AWT
- * - 跨平台一致 API
- * - 无需安装 VLC
- * - 硬件加速（macOS AVFoundation / Windows MediaFoundation）
+ * ## 架构
+ * - 视频渲染：VLCJ 的 [EmbeddedMediaPlayer] 输出到 AWT Canvas，通过 SwingPanel 嵌入 Compose
+ * - 播放控制：通过 [VlcjVideoPlayerController] 实现 [IPlayerController] 接口
+ * - 生命周期：DisposableEffect 管理播放器资源的创建与释放
+ *
+ * ## 前置条件
+ * - 需要用户安装 VLC 播放器
+ *   - macOS: `brew install vlc`
+ *   - Linux: `sudo apt install vlc`
+ *   - Windows: 从 https://www.videolan.org/vlc/ 下载安装
+ *
+ * @see VlcjVideoPlayerController
+ * @see VlcjVideoSurface
  */
 @Composable
 actual fun PlatformVideoPlayerScreen(
@@ -44,6 +46,8 @@ actual fun PlatformVideoPlayerScreen(
     onFullScreenChange: ((Boolean) -> Unit)?,
 ) {
     val controller: IPlayerController = koinInject()
+    val vlcjController = controller as VlcjVideoPlayerController
+
     val uiState by controller.playbackState.collectAsState()
     val currentPosition by controller.currentPosition.collectAsState()
     val duration by controller.duration.collectAsState()
@@ -62,12 +66,6 @@ actual fun PlatformVideoPlayerScreen(
                 isFullScreen = isFullScreen,
             )
         }
-
-    // 创建 ComposeMediaPlayer 的 VideoPlayerState
-    val videoPlayerState = rememberVideoPlayerState(
-        audioMode = AudioMode() // 默认音频模式
-    )
-
 
     // 打开视频
     LaunchedEffect(url) {
@@ -91,15 +89,10 @@ actual fun PlatformVideoPlayerScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // ComposeMediaPlayer 视频渲染
-        VideoPlayerSurface(
-            playerState = videoPlayerState,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit,
-            overlay = {
-                // 使用 ComposeMediaPlayer 内置控制栏（可选）
-                // 我们使用自定义控制栏，所以这里留空
-            }
+        // VLCJ 视频渲染表面
+        VlcjVideoSurface(
+            controller = vlcjController,
+            modifier = Modifier.fillMaxSize()
         )
 
         // 覆盖层（控制栏 + 顶栏）

@@ -52,6 +52,7 @@ pagingComposeAndroidVersion = "3.5.0"
 androidxPagingCommon = "3.5.0"
 pagingComposeDesktopVersion = "3.5.0"
 pagingCommonAndroidVersion = "3.5.0"
+vlcj = "4.8.2"
 
 
 [libraries]
@@ -147,6 +148,9 @@ compose-uiTest = { group = "org.jetbrains.compose.ui", name = "ui-test", version
 androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3Ui" }
 
 compose-ui-util = { module = "org.jetbrains.compose.ui:ui-util", version.ref = "composeMultiplatform" }
+
+# VLCJ (Desktop 视频播放)
+vlcj = { module = "uk.co.caprica:vlcj", version.ref = "vlcj" }
 
 
 [plugins]
