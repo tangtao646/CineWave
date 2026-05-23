@@ -4,6 +4,7 @@ import app.cash.paging.Pager
 import app.cash.paging.PagingConfig
 import app.cash.paging.PagingData
 import com.example.kmp_demo.core.data.paging.InMemoryPagingSource
+import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
 import com.example.kmp_demo.features.radio.data.remote.IpApiService
 import com.example.kmp_demo.features.radio.data.remote.RadioApiService
 import com.example.kmp_demo.features.radio.data.remote.dto.CountryDto
@@ -56,9 +57,13 @@ class RadioRepositoryJvm(
                         limit = pageSize
                     )
                     // 全局去重：过滤掉已见过的 uuid，防止 LazyColumn key 冲突
-                    remoteStations
+                    val entities = remoteStations
                         .filter { seenUuids.add(it.stationUuid) }
                         .map { it.toEntity(category).toDomain() }
+                    RadioJvmFetchResult(
+                        entities = entities,
+                        isEndOfPagination = entities.isEmpty()
+                    )
                 }
             }
         ).flow
@@ -96,7 +101,12 @@ class RadioRepositoryJvm(
         return Pager(
             config = PagingConfig(pageSize = 50, enablePlaceholders = false),
             pagingSourceFactory = {
-                InMemoryPagingSource<RadioStation> { _, _ -> emptyList() }
+                InMemoryPagingSource<RadioStation> { _, _ ->
+                    RadioJvmFetchResult(
+                        entities = emptyList(),
+                        isEndOfPagination = true
+                    )
+                }
             }
         ).flow
     }
@@ -116,4 +126,19 @@ class RadioRepositoryJvm(
             emptyList()
         }
     }
+}
+
+/**
+ * Radio 模块 JVM 平台的分页结果。
+ *
+ * 与 commonMain 中的 [com.example.kmp_demo.features.radio.data.remote.RadioRemoteFetchResult] 保持相同的分页计算逻辑：
+ * - nextKey = page + entities.size（按实际返回数量推进）
+ * - isEndOfPagination = 数据为空
+ */
+private data class RadioJvmFetchResult(
+    override val entities: List<RadioStation>,
+    override val isEndOfPagination: Boolean
+) : IRemoteFetchResult<RadioStation> {
+    override fun computeNextKey(page: Int, pageSize: Int): Int =
+        page + (entities.size.coerceAtLeast(pageSize))
 }

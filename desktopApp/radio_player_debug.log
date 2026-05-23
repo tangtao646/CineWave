@@ -558,3 +558,28 @@
 [10:56:18.275] === DesktopRadioPlayerController init ===
 [10:56:19.192] NativeDiscovery: found=true
 [10:56:19.192] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[11:26:38.204] === DesktopRadioPlayerController init ===
+[11:26:38.772] NativeDiscovery: found=true
+[11:26:38.773] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[11:27:22.154] === setPlaylist: items.size=6, startIndex=3
+[11:27:22.156] loadAndPlay: Otaku Music Radio, uri=https://kathy.torontocast.com:2880/;?type=http&nocache=1606748882
+[11:27:22.157] Creating MediaPlayerFactory...
+[11:27:22.180] Creating MediaPlayer...
+[11:27:22.396] Starting playback: https://kathy.torontocast.com:2880/;?type=http&nocache=1606748882
+[11:27:22.472] VLCJ play() called, waiting for ready...
+[11:27:26.397] VLCJ: playing
+[11:27:29.365] skipToNext: currentIndex=3, playlist.size=6
+[11:27:29.366] loadAndPlay: Retro PC Game Music Streaming Radio for Gyusyabu, uri=http://gyusyabu.ddo.jp:8000/;stream.mp3
+[11:27:29.587] Creating MediaPlayerFactory...
+[11:27:29.594] Creating MediaPlayer...
+[11:27:29.596] Starting playback: http://gyusyabu.ddo.jp:8000/;stream.mp3
+[11:27:29.597] VLCJ play() called, waiting for ready...
+[11:27:31.564] VLCJ: playing
+[11:27:34.167] pause()
+[11:27:34.168] VLCJ: paused
+[11:27:52.482] Timeout waiting for playback: Timed out waiting for 30000 ms
+[11:27:52.482] play()
+[11:27:52.482] VLCJ: playing
+[11:27:59.603] Timeout waiting for playback: Timed out waiting for 30000 ms
+[11:28:22.717] pause()
+[11:28:22.719] VLCJ: paused
