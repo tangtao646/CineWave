@@ -28,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.DoneSegment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import coil3.PlatformContext
@@ -37,6 +36,7 @@ import coil3.compose.LocalPlatformContext
 import com.example.kmp_demo.core.initializeCoil
 import com.example.kmp_demo.core.navigation.decodeNavParam
 import com.example.kmp_demo.core.navigation.encodeNavParam
+import com.example.kmp_demo.core.player.domain.EpisodeCache
 import com.example.kmp_demo.core.security.SensitiveWordFilter
 import com.example.kmp_demo.core.security.SensitiveWordLoader
 import com.example.kmp_demo.features.domestic.DomesticRoutes
@@ -187,6 +187,9 @@ fun App() {
                                 viewModel = viewModel,
                                 onBackClick = { currentRoute = FilmRoutes.home },
                                 onNavigateToPlayer = { url, title ->
+                                    // 从 ViewModel 的 episodesCache 中获取剧集列表并缓存
+                                    val episodes = viewModel.episodesCache.value
+                                    EpisodeCache.put(episodes)
                                     currentRoute = "film_player/${url.encodeNavParam()}/${title.encodeNavParam()}"
                                 }
                             )
@@ -197,13 +200,15 @@ fun App() {
                             val encoded = currentRoute.removePrefix("film_player/")
                             val slashIndex = encoded.indexOf("/")
                             if (slashIndex == -1) return@CompositionLocalProvider
-                            val encodedUrl = encoded.substring(0, slashIndex)
+                            val encodedUrl = encoded.take(slashIndex)
                             val encodedTitle = encoded.substring(slashIndex + 1)
                             val url = encodedUrl.decodeNavParam()
                             val title = encodedTitle.decodeNavParam()
+                            val episodes = EpisodeCache.get()
                             FilmPlayerScreen(
                                 initialUrl = url,
                                 seriesTitle = title,
+                                episodes = episodes,
                                 onBack = { currentRoute = FilmRoutes.home }
                             )
                         }
@@ -241,6 +246,8 @@ fun App() {
                                 viewModel = viewModel,
                                 onBack = { currentRoute = DomesticRoutes.home },
                                 onPlay = { url, title, episodes ->
+                                    // 缓存剧集列表，供播放器页读取
+                                    EpisodeCache.put(episodes)
                                     currentRoute = "domestic_player/${url.encodeNavParam()}/${title.encodeNavParam()}"
                                 }
                             )
@@ -255,9 +262,11 @@ fun App() {
                             val encodedTitle = encoded.substring(slashIndex + 1)
                             val url = encodedUrl.decodeNavParam()
                             val title = encodedTitle.decodeNavParam()
+                            val episodes = EpisodeCache.get()
                             DomesticPlayerScreen(
                                 initialUrl = url,
                                 seriesTitle = title,
+                                episodes = episodes,
                                 onBack = { currentRoute = DomesticRoutes.home }
                             )
                         }

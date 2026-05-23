@@ -110,6 +110,11 @@ class VideoPlayerManager(
         }
     }
 
+    fun seekToFraction(fraction: Float) {
+        val targetMs = (fraction * uiState.value.duration).toLong()
+        seekTo(targetMs)
+    }
+
     fun seekTo(positionMs: Long) {
         scope.launch {
             try {
