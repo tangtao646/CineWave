@@ -382,3 +382,176 @@
 [21:47:33.449] === DesktopRadioPlayerController init ===
 [21:47:34.726] NativeDiscovery: found=true
 [21:47:34.726] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[22:50:49.380] === DesktopRadioPlayerController init ===
+[22:50:52.527] NativeDiscovery: found=true
+[22:50:52.527] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[23:00:03.306] === DesktopRadioPlayerController init ===
+[23:00:08.978] NativeDiscovery: found=true
+[23:00:08.979] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[23:02:20.877] === DesktopRadioPlayerController init ===
+[23:02:21.006] NativeDiscovery: found=true
+[23:02:21.006] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[23:05:44.131] === DesktopRadioPlayerController init ===
+[23:05:44.270] NativeDiscovery: found=true
+[23:05:44.271] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[23:06:46.203] === DesktopRadioPlayerController init ===
+[23:06:46.318] NativeDiscovery: found=true
+[23:06:46.318] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[23:08:37.221] === DesktopRadioPlayerController init ===
+[23:08:40.379] NativeDiscovery: found=true
+[23:08:40.379] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[23:16:49.862] === DesktopRadioPlayerController init ===
+[23:16:50.359] NativeDiscovery: found=true
+[23:16:50.359] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[23:19:39.701] === DesktopRadioPlayerController init ===
+[23:19:40.214] NativeDiscovery: found=true
+[23:19:40.214] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[23:19:58.028] === DesktopRadioPlayerController init ===
+[23:19:58.506] NativeDiscovery: found=true
+[23:19:58.506] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[07:41:51.143] === DesktopRadioPlayerController init ===
+[07:41:51.709] NativeDiscovery: found=true
+[07:41:51.710] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[07:42:06.603] === DesktopRadioPlayerController init ===
+[07:42:07.115] NativeDiscovery: found=true
+[07:42:07.115] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[07:47:17.829] === DesktopRadioPlayerController init ===
+[07:47:19.582] NativeDiscovery: found=true
+[07:47:19.582] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[07:57:11.526] === DesktopRadioPlayerController init ===
+[07:57:13.314] NativeDiscovery: found=true
+[07:57:13.314] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[08:05:07.952] === DesktopRadioPlayerController init ===
+[08:05:08.455] NativeDiscovery: found=true
+[08:05:08.455] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[08:06:16.519] === DesktopRadioPlayerController init ===
+[08:06:16.986] NativeDiscovery: found=true
+[08:06:16.986] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[08:06:29.763] === setPlaylist: items.size=15, startIndex=3
+[08:06:29.763] loadAndPlay: Retro PC Game Music Streaming Radio for Gyusyabu, uri=http://gyusyabu.ddo.jp:8000/;stream.mp3
+[08:06:29.764] Creating MediaPlayerFactory...
+[08:06:29.777] Creating MediaPlayer...
+[08:06:29.956] Starting playback: http://gyusyabu.ddo.jp:8000/;stream.mp3
+[08:06:29.975] VLCJ play() called, waiting for ready...
+[08:06:32.877] VLCJ: playing
+[08:06:34.761] skipToNext: currentIndex=3, playlist.size=15
+[08:06:34.762] loadAndPlay: Retro PC Game Music Streaming Radio for Gyusyabu, uri=http://gyusyabu.ddo.jp:8000/
+[08:06:34.837] Creating MediaPlayerFactory...
+[08:06:34.843] Creating MediaPlayer...
+[08:06:34.845] Starting playback: http://gyusyabu.ddo.jp:8000/
+[08:06:34.846] VLCJ play() called, waiting for ready...
+[08:06:36.662] VLCJ: playing
+[08:06:37.495] skipToNext: currentIndex=4, playlist.size=15
+[08:06:37.496] loadAndPlay: Real Love Music - Radio Future Funk, uri=https://stream-152.zeno.fm/48533y95cnruv?zs=doyTUcjfTvCVtBOS3nlI8g
+[08:06:37.574] Creating MediaPlayerFactory...
+[08:06:37.580] Creating MediaPlayer...
+[08:06:37.582] Starting playback: https://stream-152.zeno.fm/48533y95cnruv?zs=doyTUcjfTvCVtBOS3nlI8g
+[08:06:37.583] VLCJ play() called, waiting for ready...
+[08:06:43.866] VLCJ: playing
+[08:06:46.796] skipToNext: currentIndex=5, playlist.size=15
+[08:06:46.797] loadAndPlay: Otaku Music Radio, uri=https://kathy.torontocast.com:2880/;?type=http&nocache=1606748882
+[08:06:46.901] Creating MediaPlayerFactory...
+[08:06:46.909] Creating MediaPlayer...
+[08:06:46.911] Starting playback: https://kathy.torontocast.com:2880/;?type=http&nocache=1606748882
+[08:06:46.912] VLCJ play() called, waiting for ready...
+[08:06:49.777] VLCJ: playing
+[08:06:51.784] pause()
+[08:06:51.784] VLCJ: paused
+[08:06:59.981] Timeout waiting for playback: Timed out waiting for 30000 ms
+[08:06:59.982] play()
+[08:06:59.983] VLCJ: playing
+[08:07:04.852] Timeout waiting for playback: Timed out waiting for 30000 ms
+[08:07:07.588] Timeout waiting for playback: Timed out waiting for 30000 ms
+[08:07:16.916] Timeout waiting for playback: Timed out waiting for 30000 ms
+[08:11:50.646] === DesktopRadioPlayerController init ===
+[08:11:51.140] NativeDiscovery: found=true
+[08:11:51.140] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[08:39:32.734] === DesktopRadioPlayerController init ===
+[08:39:33.172] NativeDiscovery: found=true
+[08:39:33.172] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[08:39:56.480] === DesktopRadioPlayerController init ===
+[08:39:57.033] NativeDiscovery: found=true
+[08:39:57.033] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[08:41:01.953] === DesktopRadioPlayerController init ===
+[08:41:03.644] NativeDiscovery: found=true
+[08:41:03.645] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[08:41:12.283] === setPlaylist: items.size=12, startIndex=0
+[08:41:12.285] loadAndPlay: Retro PC GAME MUSIC Streaming Radio, uri=http://gyusyabu.ddo.jp:8000/
+[08:41:12.285] Creating MediaPlayerFactory...
+[08:41:12.299] Creating MediaPlayer...
+[08:41:12.426] Starting playback: http://gyusyabu.ddo.jp:8000/
+[08:41:12.443] VLCJ play() called, waiting for ready...
+[08:41:14.256] VLCJ: playing
+[08:42:00.049] === DesktopRadioPlayerController init ===
+[08:42:00.589] NativeDiscovery: found=true
+[08:42:00.591] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[08:47:41.344] === DesktopRadioPlayerController init ===
+[08:47:41.786] NativeDiscovery: found=true
+[08:47:41.787] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[08:48:03.654] === setPlaylist: items.size=6, startIndex=2
+[08:48:03.655] loadAndPlay: Real Love Music - Radio Future Funk, uri=https://stream-152.zeno.fm/48533y95cnruv?zs=doyTUcjfTvCVtBOS3nlI8g
+[08:48:03.656] Creating MediaPlayerFactory...
+[08:48:03.672] Creating MediaPlayer...
+[08:48:03.828] Starting playback: https://stream-152.zeno.fm/48533y95cnruv?zs=doyTUcjfTvCVtBOS3nlI8g
+[08:48:03.852] VLCJ play() called, waiting for ready...
+[08:48:08.997] VLCJ: playing
+[08:48:10.019] skipToNext: currentIndex=2, playlist.size=6
+[08:48:10.019] loadAndPlay: Otaku Music Radio, uri=https://kathy.torontocast.com:2880/;?type=http&nocache=1606748882
+[08:48:11.529] Creating MediaPlayerFactory...
+[08:48:11.537] Creating MediaPlayer...
+[08:48:11.540] Starting playback: https://kathy.torontocast.com:2880/;?type=http&nocache=1606748882
+[08:48:11.542] VLCJ play() called, waiting for ready...
+[08:48:14.017] VLCJ: playing
+[08:48:14.519] skipToNext: currentIndex=3, playlist.size=6
+[08:48:14.519] loadAndPlay: Retro PC Game Music Streaming Radio for Gyusyabu, uri=http://gyusyabu.ddo.jp:8000/;stream.mp3
+[08:48:14.588] Creating MediaPlayerFactory...
+[08:48:14.597] Creating MediaPlayer...
+[08:48:14.599] Starting playback: http://gyusyabu.ddo.jp:8000/;stream.mp3
+[08:48:14.606] VLCJ play() called, waiting for ready...
+[08:48:15.202] skipToNext: currentIndex=4, playlist.size=6
+[08:48:15.202] loadAndPlay: Retro PC Game Music Streaming Radio for Gyusyabu, uri=http://gyusyabu.ddo.jp:8000/
+[08:48:15.210] Creating MediaPlayerFactory...
+[08:48:15.216] Creating MediaPlayer...
+[08:48:15.218] Starting playback: http://gyusyabu.ddo.jp:8000/
+[08:48:15.219] VLCJ play() called, waiting for ready...
+[08:48:17.158] VLCJ: playing
+[08:48:17.703] skipToNext: currentIndex=5, playlist.size=6
+[08:48:18.304] skipToNext: currentIndex=5, playlist.size=6
+[08:48:18.769] skipToNext: currentIndex=5, playlist.size=6
+[08:48:19.036] skipToNext: currentIndex=5, playlist.size=6
+[08:48:19.339] skipToNext: currentIndex=5, playlist.size=6
+[08:48:19.651] skipToNext: currentIndex=5, playlist.size=6
+[08:48:19.901] skipToNext: currentIndex=5, playlist.size=6
+[08:48:21.152] skipToPrevious: currentIndex=5, playlist.size=6
+[08:48:21.153] loadAndPlay: Retro PC Game Music Streaming Radio for Gyusyabu, uri=http://gyusyabu.ddo.jp:8000/;stream.mp3
+[08:48:21.215] Creating MediaPlayerFactory...
+[08:48:21.221] Creating MediaPlayer...
+[08:48:21.223] Starting playback: http://gyusyabu.ddo.jp:8000/;stream.mp3
+[08:48:21.224] VLCJ play() called, waiting for ready...
+[08:48:23.472] VLCJ: playing
+[08:48:26.271] pause()
+[08:48:26.272] VLCJ: paused
+[08:48:33.859] Timeout waiting for playback: Timed out waiting for 30000 ms
+[08:48:33.860] play()
+[08:48:33.864] VLCJ: playing
+[08:48:41.547] Timeout waiting for playback: Timed out waiting for 30000 ms
+[08:48:44.612] Timeout waiting for playback: Timed out waiting for 30000 ms
+[08:48:45.221] Timeout waiting for playback: Timed out waiting for 30000 ms
+[08:48:51.224] Timeout waiting for playback: Timed out waiting for 30000 ms
+[09:10:59.923] === DesktopRadioPlayerController init ===
+[09:11:01.229] NativeDiscovery: found=true
+[09:11:01.229] VLC path: /Applications/VLC.app/Contents/MacOS/lib
+[09:11:13.459] === setPlaylist: items.size=12, startIndex=9
+[09:11:13.460] loadAndPlay: Otaku Music Radio, uri=https://kathy.torontocast.com:2880/;?type=http&nocache=1606748882
+[09:11:13.460] Creating MediaPlayerFactory...
+[09:11:13.473] Creating MediaPlayer...
+[09:11:13.628] Starting playback: https://kathy.torontocast.com:2880/;?type=http&nocache=1606748882
+[09:11:13.648] VLCJ play() called, waiting for ready...
+[09:11:16.117] VLCJ: playing
+[09:11:18.273] pause()
+[09:11:18.274] VLCJ: paused
+[09:11:43.655] Timeout waiting for playback: Timed out waiting for 30000 ms
+[09:11:43.657] play()
+[09:11:43.658] VLCJ: playing
+[09:12:41.473] pause()
+[09:12:41.475] VLCJ: paused

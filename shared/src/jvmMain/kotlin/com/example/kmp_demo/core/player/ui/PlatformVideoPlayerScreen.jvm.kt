@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.layout.ContentScale
+import com.example.kmp_demo.core.player.domain.IPlayerController
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
 import io.github.kdroidfilter.composemediaplayer.AudioMode
@@ -42,7 +43,7 @@ actual fun PlatformVideoPlayerScreen(
     topBar: @Composable (BoxScope.() -> Unit)?,
     onFullScreenChange: ((Boolean) -> Unit)?,
 ) {
-    val controller = koinInject<DesktopVideoPlayerController>()
+    val controller: IPlayerController = koinInject()
     val uiState by controller.playbackState.collectAsState()
     val currentPosition by controller.currentPosition.collectAsState()
     val duration by controller.duration.collectAsState()
@@ -50,26 +51,23 @@ actual fun PlatformVideoPlayerScreen(
     val volume by controller.volume.collectAsState()
     val isFullScreen by controller.isFullScreen.collectAsState()
 
-    val aggregatedState = remember(uiState, currentPosition, duration, bufferedPercent, volume, isFullScreen) {
-        VideoPlayerUiState(
-            playbackState = uiState,
-            currentPosition = currentPosition,
-            duration = duration,
-            bufferedPercent = bufferedPercent,
-            volume = volume,
-            isFullScreen = isFullScreen,
-        )
-    }
+    val aggregatedState =
+        remember(uiState, currentPosition, duration, bufferedPercent, volume, isFullScreen) {
+            VideoPlayerUiState(
+                playbackState = uiState,
+                currentPosition = currentPosition,
+                duration = duration,
+                bufferedPercent = bufferedPercent,
+                volume = volume,
+                isFullScreen = isFullScreen,
+            )
+        }
 
     // 创建 ComposeMediaPlayer 的 VideoPlayerState
     val videoPlayerState = rememberVideoPlayerState(
         audioMode = AudioMode() // 默认音频模式
     )
 
-    // 将 VideoPlayerState 注入到 Controller
-    LaunchedEffect(videoPlayerState) {
-        controller.setVideoPlayerState(videoPlayerState)
-    }
 
     // 打开视频
     LaunchedEffect(url) {
@@ -144,7 +142,7 @@ actual fun PlatformVideoPlayerScreen(
 }
 
 internal suspend fun handlePlayerAction(
-    controller: DesktopVideoPlayerController,
+    controller: IPlayerController,
     action: PlayerAction,
 ) {
     when (action) {
@@ -154,9 +152,12 @@ internal suspend fun handlePlayerAction(
         is PlayerAction.SeekToFraction -> {
             // 需要 duration 来计算目标位置
         }
+
         is PlayerAction.SeekToMs -> controller.seekTo(action.positionMs)
         PlayerAction.ToggleFullScreen -> controller.toggleFullScreen()
-        PlayerAction.ToggleControls -> { /* 控制栏可见性由 UI 层管理 */ }
+        PlayerAction.ToggleControls -> { /* 控制栏可见性由 UI 层管理 */
+        }
+
         else -> {}
     }
 }

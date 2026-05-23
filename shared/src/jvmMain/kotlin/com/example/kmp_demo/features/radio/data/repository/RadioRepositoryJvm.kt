@@ -29,11 +29,15 @@ class RadioRepositoryJvm(
 ) : RadioRepository {
 
     private val favoriteIds = mutableSetOf<String>()
+    // 全局去重：记录所有已加载的 stationUuid，防止跨页重复
+    private val seenUuids = mutableSetOf<String>()
 
     override fun getStations(
         category: String,
         countryCode: String
     ): Flow<PagingData<RadioStation>> {
+        // 每次切换分类/国家时重置去重集合
+        seenUuids.clear()
         return Pager(
             config = PagingConfig(
                 pageSize = 30,
@@ -42,13 +46,19 @@ class RadioRepositoryJvm(
             ),
             pagingSourceFactory = {
                 InMemoryPagingSource { page, pageSize ->
+                    // 电台 API 使用 offset 偏移量分页，而非页码
+                    // page 从 1 开始，转换为 offset = (page - 1) * pageSize
+                    val offset = (page - 1) * pageSize
                     val remoteStations = radioApiService.searchStations(
                         name = category,
                         countryCode = countryCode,
-                        offset = page,
+                        offset = offset,
                         limit = pageSize
                     )
-                    remoteStations.map { it.toEntity(category).toDomain() }
+                    // 全局去重：过滤掉已见过的 uuid，防止 LazyColumn key 冲突
+                    remoteStations
+                        .filter { seenUuids.add(it.stationUuid) }
+                        .map { it.toEntity(category).toDomain() }
                 }
             }
         ).flow
