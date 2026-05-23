@@ -555,3 +555,6 @@
 [09:11:43.658] VLCJ: playing
 [09:12:41.473] pause()
 [09:12:41.475] VLCJ: paused
+[10:56:18.275] === DesktopRadioPlayerController init ===
+[10:56:19.192] NativeDiscovery: found=true
+[10:56:19.192] VLC path: /Applications/VLC.app/Contents/MacOS/lib

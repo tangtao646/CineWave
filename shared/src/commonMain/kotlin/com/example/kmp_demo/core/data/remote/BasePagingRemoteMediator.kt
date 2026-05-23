@@ -36,19 +36,14 @@ abstract class BasePagingRemoteMediator<Value : Any, K : Any>(
         baseLocalDataSource.replaceData(entities, key)
     }
 
-    open fun computeNextKey(page: Int, pageSize: Int, result: RemoteFetchResult<Value>): Int =
-        page + (result.entities.size.coerceAtLeast(pageSize))
 
     protected abstract suspend fun fetchRemoteData(
         key: K,
         page: Int,
         pageSize: Int
-    ): RemoteFetchResult<Value>
+    ): IRemoteFetchResult<Value>
 
-    data class RemoteFetchResult<Value>(
-        val entities: List<Value>,
-        val isEndOfPagination: Boolean
-    )
+
 
     override suspend fun initialize(): InitializeAction {
         val cacheTimeoutMillis = cacheTimeoutHours * 60 * 60 * 1000L
@@ -76,7 +71,10 @@ abstract class BasePagingRemoteMediator<Value : Any, K : Any>(
                 insertData(key, result.entities)
             }
 
-            val nextKey = if (result.isEndOfPagination) null else computeNextKey(page, pageSize, result)
+            val nextKey = if (result.isEndOfPagination) null else result.computeNextKey(
+                page,
+                pageSize
+            )
             saveNextPage(key, nextKey)
 
             MediatorResult.Success(endOfPaginationReached = result.isEndOfPagination)
@@ -85,3 +83,10 @@ abstract class BasePagingRemoteMediator<Value : Any, K : Any>(
         }
     }
 }
+
+interface IRemoteFetchResult<Value : Any> {
+    val entities: List<Value>
+    val isEndOfPagination: Boolean
+    fun computeNextKey(page: Int, pageSize: Int): Int
+}
+

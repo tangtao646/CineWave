@@ -10,6 +10,7 @@ import com.example.kmp_demo.core.videosource.domain.VideoSource
 import com.example.kmp_demo.features.domestic.data.local.DomesticLocalDataSource
 import com.example.kmp_demo.features.domestic.data.local.DomesticMediaEntity
 import com.example.kmp_demo.features.domestic.data.remote.DomesticApi
+import com.example.kmp_demo.features.domestic.data.remote.DomesticRemoteFetchResult
 import com.example.kmp_demo.features.domestic.data.remote.DomesticRemoteMediator
 import com.example.kmp_demo.features.domestic.data.remote.DomesticSearchEngine
 import com.example.kmp_demo.features.domestic.data.remote.mapper.toDomesticMedia
@@ -73,7 +74,7 @@ class DomesticRepositoryImpl(
         typeName: String,
         page: Int,
         pageSize: Int,
-    ): BasePagingRemoteMediator.RemoteFetchResult<DomesticMediaEntity> {
+    ): DomesticRemoteFetchResult {
         val typeParam = if (typeName == "全部") null else typeName
         val items = domesticApi.getRecentMedia(page = page, typeName = typeParam)
         val entities = items.mapIndexed { index, item ->
@@ -82,7 +83,7 @@ class DomesticRepositoryImpl(
                 orderIndex = ((page - 1) * pageSize + index).toLong(),
             )
         }
-        return BasePagingRemoteMediator.RemoteFetchResult(
+        return DomesticRemoteFetchResult(
             entities = entities,
             isEndOfPagination = entities.isEmpty(),
         )
