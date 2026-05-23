@@ -235,9 +235,40 @@ class DesktopVideoPlayerController : IPlayerController {
     override fun release() {
         stopPositionPolling()
         scope.cancel()
-        mediaPlayer.release()
-        mediaPlayerFactory.release()
-        latestVideoFrame = null
+        // 在后台线程释放 VLC 资源，避免 AWT 事件线程上的 pthread_mutex_lock 竞争
+        Thread {
+            try {
+                // 先停止播放，让 VLC 内部事件处理线程完成清理
+                if (mediaPlayer.status().isPlaying) {
+                    mediaPlayer.controls().stop()
+                }
+            } catch (_: Exception) {
+                // 忽略停止时的异常
+            }
+            // 短暂等待 VLC 内部事件处理完成
+            try {
+                Thread.sleep(50)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            try {
+                mediaPlayer.release()
+            } catch (_: Exception) {
+                // 忽略释放时的异常
+            }
+            try {
+                mediaPlayerFactory.release()
+            } catch (_: Exception) {
+                // 忽略
+            }
+            latestVideoFrame = null
+        }.apply {
+            isDaemon = true
+            name = "vlc-release-thread"
+            start()
+            // 等待释放完成，最多 2 秒
+            join(2000)
+        }
     }
 }
 

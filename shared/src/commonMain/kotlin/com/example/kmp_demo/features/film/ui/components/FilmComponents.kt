@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.example.kmp_demo.core.components.shimmer
+import com.example.kmp_demo.core.components.skeletonAspectRatio
 
 @Composable
 fun MovieSkeletonItem() {
@@ -19,19 +20,21 @@ fun MovieSkeletonItem() {
         modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column {
+            // 封面图骨架 — 使用平台相关的宽高比
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(0.67f)
-                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    .aspectRatio(skeletonAspectRatio())
+                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     .shimmer()
             )
-            
+
+            // 文字信息骨架
             Column(
                 modifier = Modifier
                     .padding(12.dp)
@@ -39,15 +42,15 @@ fun MovieSkeletonItem() {
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.8f)
-                        .height(20.dp)
+                        .fillMaxWidth(0.85f)
+                        .height(18.dp)
                         .shimmer()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.4f)
-                        .height(16.dp)
+                        .height(14.dp)
                         .shimmer()
                 )
             }
