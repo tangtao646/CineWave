@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Timer
@@ -39,6 +40,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -52,10 +54,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -98,8 +103,6 @@ fun PlayerDetailScreen(
         label = "BgColor"
     )
 
-    if (currentStation == null) return
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -113,137 +116,146 @@ fun PlayerDetailScreen(
             )
 
     ) {
-        IconButton(
-            onClick = onClose,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .statusBarsPadding()
-                .padding(16.dp)
-        ) {
-            Icon(Icons.Default.Close, contentDescription = "Close")
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            // 旋转唱片
-            Box(contentAlignment = Alignment.Center) {
-                RotatingDisk(
-                    imageUrl = currentStation.favicon,
-                    isRotating = isPlaying
-                )
+        if (currentStation == null) {
+            // 如果当前没有电台，显示加载中或提示
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+        } else {
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(16.dp)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
             }
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // 旋转唱片
+                Box(contentAlignment = Alignment.Center) {
+                    RotatingDisk(
+                        imageUrl = currentStation.favicon,
+                        isRotating = isPlaying
+                    )
+                }
 
-            Text(
-                text = uiState.trackTitle ?: currentStation.name,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
+                Spacer(modifier = Modifier.height(40.dp))
 
-            Text(
-                text = currentStation.tags.joinToString(" | "),
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 8.dp)
-            )
+                Text(
+                    text = uiState.trackTitle ?: currentStation.name,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
 
-            Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = currentStation.tags.joinToString(" | "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
 
-            // 睡眠定时器
-            if (sleepTimerRemaining != null) {
-                AssistChip(
-                    onClick = { showTimerSheet = true },
-                    label = { Text("定时关闭: ${sleepTimerRemaining}min") },
-                    leadingIcon = {
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // 睡眠定时器
+                if (sleepTimerRemaining != null) {
+                    AssistChip(
+                        onClick = { showTimerSheet = true },
+                        label = { Text("定时关闭: ${sleepTimerRemaining}min") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Timer,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                } else {
+                    IconButton(onClick = { showTimerSheet = true }) {
                         Icon(
                             Icons.Default.Timer,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            contentDescription = "Set Timer",
+                            tint = Color.Gray
                         )
                     }
-                )
-            } else {
-                IconButton(onClick = { showTimerSheet = true }) {
-                    Icon(Icons.Default.Timer, contentDescription = "Set Timer", tint = Color.Gray)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(40.dp))
-
-            // 播放控制
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = { playerManager.playPrevious() },
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        Icons.Default.SkipPrevious,
-                        contentDescription = "Previous",
-                        modifier = Modifier.size(36.dp)
-                    )
                 }
 
-                val primaryColor = MaterialTheme.colorScheme.primary
-                FilledIconButton(
-                    onClick = { playerManager.togglePlayPause() },
-                    modifier = Modifier
-                        .size(72.dp)
-                        .drawBehind {
-                            if (isBuffering) {
-                                rotate(rotation) {
-                                    drawCircle(
-                                        brush = Brush.sweepGradient(
-                                            0f to Color.Transparent,
-                                            0.5f to primaryColor,
-                                            1f to Color.Transparent
-                                        ),
-                                        radius = size.minDimension / 2 + 4.dp.toPx(),
-                                        style = Stroke(width = 4.dp.toPx())
-                                    )
-                                }
-                            }
-                        },
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = if (isBuffering) MaterialTheme.colorScheme.primary.copy(
-                            alpha = 0.1f
-                        ) else MaterialTheme.colorScheme.primary
-                    )
+                Spacer(modifier = Modifier.height(40.dp))
+
+                // 播放控制
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isBuffering) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(32.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else {
+                    IconButton(
+                        onClick = { playerManager.playPrevious() },
+                        modifier = Modifier.size(48.dp)
+                    ) {
                         Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = "Play/Pause",
-                            modifier = Modifier.size(40.dp)
+                            Icons.Default.SkipPrevious,
+                            contentDescription = "Previous",
+                            modifier = Modifier.size(36.dp)
                         )
                     }
-                }
 
-                IconButton(
-                    onClick = { playerManager.playNext() },
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        Icons.Default.SkipNext,
-                        contentDescription = "Next",
-                        modifier = Modifier.size(36.dp)
-                    )
+                    val primaryColor = MaterialTheme.colorScheme.primary
+                    FilledIconButton(
+                        onClick = { playerManager.togglePlayPause() },
+                        modifier = Modifier
+                            .size(72.dp)
+                            .drawBehind {
+                                if (isBuffering) {
+                                    rotate(rotation) {
+                                        drawCircle(
+                                            brush = Brush.sweepGradient(
+                                                0f to Color.Transparent,
+                                                0.5f to primaryColor,
+                                                1f to Color.Transparent
+                                            ),
+                                            radius = size.minDimension / 2 + 4.dp.toPx(),
+                                            style = Stroke(width = 4.dp.toPx())
+                                        )
+                                    }
+                                }
+                            },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = if (isBuffering) MaterialTheme.colorScheme.primary.copy(
+                                alpha = 0.1f
+                            ) else MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        if (isBuffering) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(32.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "Play/Pause",
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = { playerManager.playNext() },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.SkipNext,
+                            contentDescription = "Next",
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
                 }
             }
         }
@@ -299,30 +311,69 @@ fun RotatingDisk(
         modifier = Modifier
             .size(280.dp)
             .clip(CircleShape)
-            .background(Color.Black)
-            .padding(12.dp)
+            .background(Color(0xFF1A1A1A)) // 深灰色背景，模拟唱片
+            .padding(8.dp)
+            .drawBehind {
+                // 绘制唱片纹路
+                val center = size.center
+                val radius = size.minDimension / 2
+                for (i in 1..8) {
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.05f),
+                        radius = radius * (i / 9f),
+                        center = center,
+                        style = Stroke(width = 1.dp.toPx())
+                    )
+                }
+            },
+        contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(color = Color.DarkGray, style = Stroke(width = 1f))
-        }
-
-        // Coil 3 KMP: 直接传 URL，无需 ImageRequest.Builder(LocalContext.current)
-        AsyncImage(
-            model = imageUrl,
-            contentDescription = null,
-            modifier = Modifier
-                .fillMaxSize()
-                .rotate(currentRotation)
-                .clip(CircleShape),
-            contentScale = ContentScale.Crop
-        )
-
+        // 使用 graphicsLayer 进行旋转，性能更优
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .fillMaxSize()
+                .padding(4.dp)
+                .graphicsLayer { rotationZ = currentRotation }
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surface)
-                .align(Alignment.Center)
-        )
+        ) {
+            if (imageUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    placeholder = rememberVectorPainter(Icons.Default.Radio),
+                    error = rememberVectorPainter(Icons.Default.Radio)
+                )
+            } else {
+                // 如果没有图片，显示默认图标
+                Icon(
+                    imageVector = Icons.Default.Radio,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(48.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                )
+            }
+        }
+
+        // 中心装饰圆（模拟唱片轴）
+        Surface(
+            modifier = Modifier.size(48.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 4.dp,
+            shadowElevation = 2.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color.DarkGray)
+                )
+            }
+        }
     }
 }

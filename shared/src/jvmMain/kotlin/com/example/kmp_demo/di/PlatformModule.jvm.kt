@@ -6,6 +6,7 @@ import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
 import com.example.kmp_demo.core.player.domain.IPlayerController as VideoPlayerController
 import com.example.kmp_demo.features.radio.domain.player.IPlayerController as RadioPlayerController
 import com.example.kmp_demo.features.radio.player.DesktopRadioPlayerController
+import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import org.koin.core.module.Module
 import org.koin.dsl.module
 
@@ -39,16 +40,25 @@ actual val platformModule: Module = module {
 
     // === Video Player Controller (VLCJ) ===
     // 使用 VLCJ (libvlc) 实现桌面端视频播放，支持广泛的音视频格式。
-    // 使用 single 而非 factory，因为 VLCJ 的 MediaPlayerFactory 是重量级对象，
-    // 每次创建新实例会创建新的 libvlc 实例，浪费资源。
-    // PlatformVideoPlayerScreen 的 DisposableEffect 会在退出时调用 release()。
-    single<VideoPlayerController> {
-        DesktopVideoPlayerController()
+    
+    // 1. MediaPlayerFactory 是重量级对象，全局共享一个实例以节省资源并避免多次加载 native 库
+    single<MediaPlayerFactory> {
+        MediaPlayerFactory(
+            "--no-video-title-show",
+            "--quiet",
+            "--no-snapshot-preview",
+        )
+    }
+
+    // 2. 播放器控制器必须是 factory，因为每次进入播放页都需要一个新的 MediaPlayer 实例。
+    // 旧的实例会在 PlatformVideoPlayerScreen 退出时被 release() 销毁。
+    factory<VideoPlayerController> {
+        DesktopVideoPlayerController(mediaPlayerFactory = get())
     }
 
 
-    // === Radio Player Controller (ComposeMediaPlayer) ===
+    // === Radio Player Controller (VLCJ) ===
     single<RadioPlayerController> {
-        DesktopRadioPlayerController()
+        DesktopRadioPlayerController(mediaPlayerFactory = get())
     }
 }

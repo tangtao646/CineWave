@@ -66,6 +66,16 @@ import com.example.kmp_demo.features.radio.player.RadioPlayerManager
 import com.example.kmp_demo.features.radio.ui.list.RadioListViewModel
 import com.example.kmp_demo.features.radio.ui.player.PlayerDetailScreen
 import com.example.kmp_demo.features.radio.ui.search.RadioSearchScreen
+import com.example.kmp_demo.navigation.DesktopRoute
+import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.ui.NavDisplay
+import androidx.savedstate.serialization.SavedStateConfiguration
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
 import org.koin.compose.KoinContext
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
@@ -77,13 +87,8 @@ import org.koin.core.parameter.parametersOf
  * 使用左右布局：左侧 NavigationRail 导航栏 + 右侧内容区。
  * 底部导航栏已替换为侧边导航栏，更符合 Desktop 操作习惯。
  *
- * 由于 JetBrains Navigation Compose 在 Desktop 上存在
- * SavedStateRegistryController.performRestore(Bundle) 的兼容性问题，
- * 这里使用简单的状态管理替代 NavHost。
- *
- * ## 关键设计：页面缓存与生命周期管理
- * 使用 Compose 的 [key] 函数确保每次路由变化时，Composable 树完全重建，
- * 避免 ViewModel 和播放器 Controller 的缓存/复用问题。
+ * 这里引入了 JetBrains Navigation3 进行桌面端导航验证。
+ * Nav3 是声明式的、类型安全的，且专门为跨平台设计。
  *
  * ## 全屏沉浸式播放
  * 当视频播放器进入全屏模式时，左侧导航栏自动隐藏，播放器占据整个窗口。
@@ -93,8 +98,28 @@ import org.koin.core.parameter.parametersOf
 fun App() {
     KoinContext {
         MaterialTheme {
-            // 当前路由，初始为电台列表页
-            var currentRoute by remember { mutableStateOf(RadioRoutes.list) }
+            // 在 Desktop 上使用 Navigation3 需要配置序列化模块以支持状态保存
+            val configuration = remember {
+                SavedStateConfiguration {
+                    serializersModule = SerializersModule {
+                        polymorphic(NavKey::class) {
+                            subclass(DesktopRoute.RadioList::class)
+                            subclass(DesktopRoute.RadioSearch::class)
+                            subclass(DesktopRoute.RadioPlayer::class)
+                            subclass(DesktopRoute.FilmHome::class)
+                            subclass(DesktopRoute.FilmSearch::class)
+                            subclass(DesktopRoute.FilmDetail::class)
+                            subclass(DesktopRoute.FilmPlayer::class)
+                            subclass(DesktopRoute.DomesticHome::class)
+                            subclass(DesktopRoute.DomesticSearch::class)
+                            subclass(DesktopRoute.DomesticDetail::class)
+                            subclass(DesktopRoute.DomesticPlayer::class)
+                        }
+                    }
+                }
+            }
+            // 使用 Navigation3 的 NavBackStack 管理路由栈
+            val backStack = rememberNavBackStack(configuration, DesktopRoute.RadioList)
             // 全屏沉浸式状态 — 播放器全屏时隐藏左侧导航栏
             var isFullScreen by remember { mutableStateOf(false) }
 
@@ -115,14 +140,30 @@ fun App() {
             val radioViewModel: RadioListViewModel = koinViewModel()
             val radioPlayerManager = radioViewModel.playerManager
 
-            // 全屏时监听 ESC 键退出全屏
+            // 自动管理全屏状态：当离开播放页面时，强制退出全屏模式，确保导航栏能重新显示
+            LaunchedEffect(backStack.last()) {
+                val currentRoute = backStack.last()
+                if (currentRoute !is DesktopRoute.FilmPlayer && currentRoute !is DesktopRoute.DomesticPlayer) {
+                    isFullScreen = false
+                }
+            }
+
+            // 全屏时监听 ESC 键退出全屏 (或者执行返回操作)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .onKeyEvent { keyEvent ->
-                        if (keyEvent.key == Key.Escape && isFullScreen) {
-                            isFullScreen = false
-                            true
+                        if (keyEvent.key == Key.Escape) {
+                            if (isFullScreen) {
+                                isFullScreen = false
+                                true
+                            } else if (backStack.size > 1) {
+                                // 如果不是全屏且有回退栈，则执行返回
+                                backStack.removeLast()
+                                true
+                            } else {
+                                false
+                            }
                         } else {
                             false
                         }
@@ -132,162 +173,147 @@ fun App() {
                     // ===== 左侧导航栏（全屏时隐藏）=====
                     if (!isFullScreen) {
                         DesktopNavigationRail(
-                            currentScreen = currentRoute,
-                            onNavigate = { screen -> currentRoute = screen },
+                            currentScreen = backStack.last() as DesktopRoute,
+                            onNavigate = { route -> 
+                                // 桌面端导航通常点击主项时清空栈并跳转
+                                backStack.clear()
+                                backStack.add(route)
+                            },
                             radioPlayerManager = radioPlayerManager,
-                            onMiniPlayerClick = { currentRoute = RadioRoutes.player }
+                            onMiniPlayerClick = { backStack.add(DesktopRoute.RadioPlayer) }
                         )
                     }
 
                     // ===== 右侧内容区 =====
-                    Box(modifier = Modifier.weight(1f)) {
-                        // 使用 key(currentRoute) 确保每次路由变化时 Composable 树完全重建
-                        // 这解决了两个关键问题：
-                        // 1. 页面缓存：回退后再次进入同一页面时，ViewModel 是全新的
-                        // 2. 播放器崩溃：播放器 Controller 不会因为 Compose 缓存而处于已释放状态
-                        key(currentRoute) {
-                            // 根据当前路由显示对应的页面
-                            when {
-                                // === 电台板块 ===
-                                currentRoute == RadioRoutes.list -> {
-                                    RadioListScreen(
-                                        viewModel = radioViewModel,
-                                        onNavigateToSearch = { currentRoute = RadioRoutes.search },
-                                        onNavigateToPlayer = { currentRoute = RadioRoutes.player }
-                                    )
-                                }
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        // 使用 Navigation3 的 NavDisplay 替代手动的 when(currentRoute)
+                        NavDisplay(
+                            backStack = backStack,
+                        ) { route ->
+                            val desktopRoute = route as DesktopRoute
+                            NavEntry(key = desktopRoute) {
+                                // 根据当前路由显示对应的页面
+                                when (desktopRoute) {
+                                    // === 电台板块 ===
+                                    is DesktopRoute.RadioList -> {
+                                        RadioListScreen(
+                                            viewModel = radioViewModel,
+                                            onNavigateToSearch = { backStack.add(DesktopRoute.RadioSearch) },
+                                            onNavigateToPlayer = { backStack.add(DesktopRoute.RadioPlayer) }
+                                        )
+                                    }
 
-                                currentRoute == RadioRoutes.search -> {
-                                    RadioSearchScreen(
-                                        viewModel = koinViewModel(),
-                                        onBack = { currentRoute = RadioRoutes.list },
-                                        onNavigateToPlayer = { currentRoute = RadioRoutes.player }
-                                    )
-                                }
+                                    is DesktopRoute.RadioSearch -> {
+                                        RadioSearchScreen(
+                                            viewModel = koinViewModel(),
+                                            onBack = { backStack.removeLast() },
+                                            onNavigateToPlayer = { backStack.add(DesktopRoute.RadioPlayer) }
+                                        )
+                                    }
 
-                                currentRoute == RadioRoutes.player -> {
-                                    PlayerDetailScreen(
-                                        playerManager = radioPlayerManager,
-                                        onClose = { currentRoute = RadioRoutes.list }
-                                    )
-                                }
+                                    is DesktopRoute.RadioPlayer -> {
+                                        PlayerDetailScreen(
+                                            playerManager = radioPlayerManager,
+                                            onClose = { backStack.removeLast() }
+                                        )
+                                    }
 
-                                // === 电影板块 ===
-                                currentRoute == FilmRoutes.home -> {
-                                    FilmHomeScreen(
-                                        onSearchClick = { currentRoute = FilmRoutes.search },
-                                        onMovieClick = { movieId ->
-                                            currentRoute = FilmRoutes.detail(movieId)
-                                        }
-                                    )
-                                }
+                                    // === 电影板块 ===
+                                    is DesktopRoute.FilmHome -> {
+                                        FilmHomeScreen(
+                                            onSearchClick = { backStack.add(DesktopRoute.FilmSearch) },
+                                            onMovieClick = { movieId ->
+                                                backStack.add(DesktopRoute.FilmDetail(movieId))
+                                            }
+                                        )
+                                    }
 
-                                // 电影搜索页
-                                currentRoute == FilmRoutes.search -> {
-                                    FilmSearchScreen(
-                                        onBackClick = { currentRoute = FilmRoutes.home },
-                                        onMovieClick = { movieId ->
-                                            currentRoute = FilmRoutes.detail(movieId)
-                                        }
-                                    )
-                                }
+                                    is DesktopRoute.FilmSearch -> {
+                                        FilmSearchScreen(
+                                            onBackClick = { backStack.removeLast() },
+                                            onMovieClick = { movieId ->
+                                                backStack.add(DesktopRoute.FilmDetail(movieId))
+                                            }
+                                        )
+                                    }
 
-                                // 电影详情页
-                                currentRoute.startsWith("film_detail/") -> {
-                                    val movieId = currentRoute.removePrefix("film_detail/").toIntOrNull() ?: return@Box
-                                    // 使用 currentRoute 作为 key，确保切换不同电影时创建新的 ViewModel
-                                    val viewModel: FilmDetailViewModel = koinViewModel(
-                                        key = currentRoute,
-                                        parameters = { parametersOf(movieId) }
-                                    )
-                                    FilmDetailScreen(
-                                        viewModel = viewModel,
-                                        onBackClick = { currentRoute = FilmRoutes.home },
-                                        onNavigateToPlayer = { url, title ->
-                                            // 从 ViewModel 的 episodesCache 中获取剧集列表并缓存
-                                            val episodes = viewModel.episodesCache.value
-                                            EpisodeCache.put(episodes)
-                                            currentRoute = "film_player/${url.encodeNavParam()}/${title.encodeNavParam()}"
-                                        }
-                                    )
-                                }
+                                    is DesktopRoute.FilmDetail -> {
+                                        // 使用 route 本身作为 key，实现 ViewModel 实例隔离
+                                        val viewModel: FilmDetailViewModel = koinViewModel(
+                                            key = desktopRoute.toString(),
+                                            parameters = { parametersOf(desktopRoute.movieId) }
+                                        )
+                                        FilmDetailScreen(
+                                            viewModel = viewModel,
+                                            onBackClick = { backStack.removeLast() },
+                                            onNavigateToPlayer = { url, title ->
+                                                val episodes = viewModel.episodesCache.value
+                                                backStack.add(DesktopRoute.FilmPlayer(url, title, episodes))
+                                            }
+                                        )
+                                    }
 
-                                // 电影播放器页
-                                currentRoute.startsWith("film_player/") -> {
-                                    val encoded = currentRoute.removePrefix("film_player/")
-                                    val slashIndex = encoded.indexOf("/")
-                                    if (slashIndex == -1) return@Box
-                                    val encodedUrl = encoded.take(slashIndex)
-                                    val encodedTitle = encoded.substring(slashIndex + 1)
-                                    val url = encodedUrl.decodeNavParam()
-                                    val title = encodedTitle.decodeNavParam()
-                                    val episodes = EpisodeCache.get()
-                                    FilmPlayerScreen(
-                                        initialUrl = url,
-                                        seriesTitle = title,
-                                        episodes = episodes,
-                                        onBack = { currentRoute = FilmRoutes.home },
-                                        onFullScreenChange = { full -> isFullScreen = full }
-                                    )
-                                }
+                                    is DesktopRoute.FilmPlayer -> {
+                                        FilmPlayerScreen(
+                                            initialUrl = desktopRoute.url,
+                                            seriesTitle = desktopRoute.title,
+                                            episodes = desktopRoute.episodes,
+                                            onBack = { 
+                                                isFullScreen = false
+                                                backStack.removeLast() 
+                                            },
+                                            onFullScreenChange = { full -> isFullScreen = full }
+                                        )
+                                    }
 
-                                // === 国产板块 ===
-                                currentRoute == DomesticRoutes.home -> {
-                                    DomesticHomeScreen(
-                                        onSearchClick = { currentRoute = DomesticRoutes.search },
-                                        onMediaClick = { media ->
-                                            currentRoute = DomesticRoutes.detail(media.title)
-                                        }
-                                    )
-                                }
+                                    // === 国产板块 ===
+                                    is DesktopRoute.DomesticHome -> {
+                                        DomesticHomeScreen(
+                                            onSearchClick = { backStack.add(DesktopRoute.DomesticSearch) },
+                                            onMediaClick = { media ->
+                                                backStack.add(DesktopRoute.DomesticDetail(media.title))
+                                            }
+                                        )
+                                    }
 
-                                // 国产搜索页
-                                currentRoute == DomesticRoutes.search -> {
-                                    DomesticSearchScreen(
-                                        onBackClick = { currentRoute = DomesticRoutes.home },
-                                        onMediaClick = { media ->
-                                            currentRoute = DomesticRoutes.detail(media.title)
-                                        }
-                                    )
-                                }
+                                    is DesktopRoute.DomesticSearch -> {
+                                        DomesticSearchScreen(
+                                            onBackClick = { backStack.removeLast() },
+                                            onMediaClick = { media ->
+                                                backStack.add(DesktopRoute.DomesticDetail(media.title))
+                                            }
+                                        )
+                                    }
 
-                                // 国产详情页
-                                currentRoute.startsWith("domestic_detail/") -> {
-                                    val encodedTitle = currentRoute.removePrefix("domestic_detail/")
-                                    val title = encodedTitle.decodeNavParam()
-                                    // 使用 currentRoute 作为 key，确保切换不同影视时创建新的 ViewModel
-                                    val viewModel: DomesticDetailViewModel = koinViewModel(
-                                        key = currentRoute,
-                                        parameters = { parametersOf(title) }
-                                    )
-                                    DomesticDetailScreen(
-                                        viewModel = viewModel,
-                                        onBack = { currentRoute = DomesticRoutes.home },
-                                        onPlay = { url, title, episodes ->
-                                            // 缓存剧集列表，供播放器页读取
-                                            EpisodeCache.put(episodes)
-                                            currentRoute = "domestic_player/${url.encodeNavParam()}/${title.encodeNavParam()}"
-                                        }
-                                    )
-                                }
+                                    is DesktopRoute.DomesticDetail -> {
+                                        val viewModel: DomesticDetailViewModel = koinViewModel(
+                                            key = desktopRoute.toString(),
+                                            parameters = { parametersOf(desktopRoute.title) }
+                                        )
+                                        DomesticDetailScreen(
+                                            viewModel = viewModel,
+                                            onBack = { backStack.removeLast() },
+                                            onPlay = { url, title, episodes ->
+                                                backStack.add(DesktopRoute.DomesticPlayer(url, title, episodes))
+                                            }
+                                        )
+                                    }
 
-                                // 国产播放器页
-                                currentRoute.startsWith("domestic_player/") -> {
-                                    val encoded = currentRoute.removePrefix("domestic_player/")
-                                    val slashIndex = encoded.indexOf("/")
-                                    if (slashIndex == -1) return@Box
-                                    val encodedUrl = encoded.substring(0, slashIndex)
-                                    val encodedTitle = encoded.substring(slashIndex + 1)
-                                    val url = encodedUrl.decodeNavParam()
-                                    val title = encodedTitle.decodeNavParam()
-                                    val episodes = EpisodeCache.get()
-                                    DomesticPlayerScreen(
-                                        initialUrl = url,
-                                        seriesTitle = title,
-                                        episodes = episodes,
-                                        onBack = { currentRoute = DomesticRoutes.home },
-                                        onFullScreenChange = { full -> isFullScreen = full }
-                                    )
+                                    is DesktopRoute.DomesticPlayer -> {
+                                        DomesticPlayerScreen(
+                                            initialUrl = desktopRoute.url,
+                                            seriesTitle = desktopRoute.title,
+                                            episodes = desktopRoute.episodes,
+                                            onBack = { 
+                                                isFullScreen = false
+                                                backStack.removeLast() 
+                                            },
+                                            onFullScreenChange = { full -> isFullScreen = full }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -306,15 +332,15 @@ fun App() {
  */
 @Composable
 fun DesktopNavigationRail(
-    currentScreen: String,
-    onNavigate: (String) -> Unit,
+    currentScreen: DesktopRoute,
+    onNavigate: (DesktopRoute) -> Unit,
     radioPlayerManager: RadioPlayerManager?,
     onMiniPlayerClick: () -> Unit
 ) {
     val screens = listOf(
-        DesktopNavItem(RadioRoutes.list, "电台", Icons.Default.Radio),
-        DesktopNavItem(FilmRoutes.home, "电影", Icons.Default.Face),
-        DesktopNavItem(DomesticRoutes.home, "国产", Icons.Default.Tv)
+        DesktopNavItem(DesktopRoute.RadioList, "电台", Icons.Default.Radio),
+        DesktopNavItem(DesktopRoute.FilmHome, "电影", Icons.Default.Face),
+        DesktopNavItem(DesktopRoute.DomesticHome, "国产", Icons.Default.Tv)
     )
 
     NavigationRail(
@@ -415,7 +441,7 @@ fun MiniPlayerRailItem(
 }
 
 private data class DesktopNavItem(
-    val route: String,
+    val route: DesktopRoute,
     val label: String,
     val icon: ImageVector
 )

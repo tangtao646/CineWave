@@ -1,5 +1,7 @@
 package com.example.kmp_demo.core.player.domain
 
+import kotlinx.serialization.Serializable
+
 /**
  * 剧集信息模型，用于播放页内沉浸式选集。
  *
@@ -11,6 +13,7 @@ package com.example.kmp_demo.core.player.domain
  * @param url   播放地址
  * @param title 可选的剧集副标题，如"第1集：觉醒"
  */
+@Serializable
 data class EpisodeInfo(
     val index: Int,
     val label: String,

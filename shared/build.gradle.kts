@@ -98,6 +98,10 @@ kotlin {
 
             implementation(libs.androidx.navigation.compose)
 
+            implementation(libs.jetbrains.navigation3.ui)
+            implementation(libs.jetbrains.compose.adaptive.navigation3)
+            implementation(libs.jetbrains.lifecycle.viewmodel.navigation3)
+
         }
         jvmMain.dependencies {
             implementation(libs.compose.uiToolingPreview)

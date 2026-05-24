@@ -27,7 +27,9 @@ import java.time.format.DateTimeFormatter
  * - 内置缓冲管理
  * - 支持播放/暂停/停止
  */
-class DesktopRadioPlayerController : IPlayerController {
+class DesktopRadioPlayerController(
+    private val mediaPlayerFactory: MediaPlayerFactory
+) : IPlayerController {
 
     companion object {
         private const val LOG_FILE = "radio_player_debug.log"
@@ -43,7 +45,6 @@ class DesktopRadioPlayerController : IPlayerController {
 
     private var currentPlaylist = listOf<PlayableMedia>()
     private var currentIndex = -1
-    private var mediaPlayerFactory: MediaPlayerFactory? = null
     private var mediaPlayer: MediaPlayer? = null
     private var isPaused = false
 
@@ -98,12 +99,8 @@ class DesktopRadioPlayerController : IPlayerController {
 
         withContext(Dispatchers.Default) {
             try {
-                log("Creating MediaPlayerFactory...")
-                val factory = MediaPlayerFactory()
-                mediaPlayerFactory = factory
-
                 log("Creating MediaPlayer...")
-                val player = factory.mediaPlayers().newMediaPlayer()
+                val player = mediaPlayerFactory.mediaPlayers().newMediaPlayer()
                 mediaPlayer = player
 
                 // 设置事件监听
@@ -186,11 +183,7 @@ class DesktopRadioPlayerController : IPlayerController {
         try {
             mediaPlayer?.release()
         } catch (_: Exception) { }
-        try {
-            mediaPlayerFactory?.release()
-        } catch (_: Exception) { }
         mediaPlayer = null
-        mediaPlayerFactory = null
     }
 
     override suspend fun play() {

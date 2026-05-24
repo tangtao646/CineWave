@@ -30,8 +30,9 @@ val radioModuleJvm = module {
     // === Repository — 无 Room 缓存 ===
     single<RadioRepository> { RadioRepositoryJvm(get(), get()) }
 
-    // === Player Controller — JavaFX MediaPlayer ===
-    single<IPlayerController> { DesktopRadioPlayerController() }
+    // === Player Controller — VLCJ MediaPlayer ===
+    // 使用全局单例 MediaPlayerFactory 创建电台播放器
+    single<IPlayerController> { DesktopRadioPlayerController(mediaPlayerFactory = get()) }
 
     // === Player Manager ===
     single { RadioPlayerManager(get()) }

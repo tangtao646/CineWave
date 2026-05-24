@@ -1,8 +1,8 @@
 [versions]
-agp = "8.13.2"
-android-compileSdk = "36"
+agp = "9.2.1"
+android-compileSdk = "37"
 android-minSdk = "24"
-android-targetSdk = "36"
+android-targetSdk = "37"
 androidx-activity = "1.13.0"
 androidx-appcompat = "1.7.1"
 androidx-core = "1.18.0"
@@ -17,7 +17,7 @@ ktor = "3.1.2"
 coil = "3.2.0"
 navigation = "2.8.0-alpha13"
 pagingCommon = "3.1.1-0.3.1"
-room = "2.7.1"
+room = "2.7.2"
 ksp = "2.3.8"
 koin = "4.0.3"
 datetime = "0.6.2"
@@ -44,6 +44,10 @@ pagingCommonVersion = "3.4.0"
 navigationCommonAndroid = "2.9.0"
 navigationCommonDesktop = "2.9.0-beta01"
 navigationCompose = "2.9.0"
+multiplatform-nav3-ui = "1.1.1"
+compose-multiplatform-adaptive = "1.3.0-beta01"
+compose-multiplatform-lifecycle = "2.11.0-beta01"
+
 lifecycleViewmodelCompose = "2.8.6"
 lifecycleRuntimeCompose = "2.8.6"
 navigationRuntimeDesktop = "2.9.0-beta01"
@@ -100,6 +104,10 @@ okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 androidx-navigation-common-android = { group = "androidx.navigation", name = "navigation-common-android", version.ref = "navigationCommonAndroid" }
 androidx-navigation-common-desktop = { group = "androidx.navigation", name = "navigation-common-desktop", version.ref = "navigationCommonDesktop" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+
+jetbrains-navigation3-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "multiplatform-nav3-ui" }
+jetbrains-compose-adaptive-navigation3 = { module = "org.jetbrains.compose.material3.adaptive:adaptive-navigation3", version.ref = "compose-multiplatform-adaptive" }
+jetbrains-lifecycle-viewmodel-navigation3 = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "compose-multiplatform-lifecycle" }
 
 # Paging (Cash App KMP) — 代码基于 app.cash.paging 编写
 paging-common = { group = "app.cash.paging", name = "paging-common", version.ref = "cash-paging" }
