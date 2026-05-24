@@ -42,20 +42,15 @@ import java.nio.ByteBuffer
  * @see IPlayerController
  * @see CallbackVideoSurface
  */
-class DesktopVideoPlayerController : IPlayerController {
+class DesktopVideoPlayerController(
+    private val mediaPlayerFactory: MediaPlayerFactory
+) : IPlayerController {
 
     companion object {
         private const val POSITION_POLL_INTERVAL_MS = 250L
     }
 
     // ==================== VLCJ 核心组件 ====================
-
-    /** VLCJ 媒体播放器工厂 */
-    private val mediaPlayerFactory: MediaPlayerFactory = MediaPlayerFactory(
-        "--no-video-title-show",
-        "--quiet",
-        "--no-snapshot-preview",
-    )
 
     /** VLCJ 嵌入式媒体播放器 */
     val mediaPlayer: EmbeddedMediaPlayer = mediaPlayerFactory.mediaPlayers().newEmbeddedMediaPlayer()
@@ -235,39 +230,54 @@ class DesktopVideoPlayerController : IPlayerController {
     override fun release() {
         stopPositionPolling()
         scope.cancel()
+        
+        // 抓取当前实例，避免多线程竞争
+        val player = mediaPlayer
+        
         // 在后台线程释放 VLC 资源，避免 AWT 事件线程上的 pthread_mutex_lock 竞争
         Thread {
             try {
-                // 先停止播放，让 VLC 内部事件处理线程完成清理
-                if (mediaPlayer.status().isPlaying) {
-                    mediaPlayer.controls().stop()
+                // 1. 停止视频表面回调，避免继续渲染
+                player.videoSurface().set(null)
+                
+                // 2. 显式清除音效器。某些版本的 libvlc 在 release 时自动清理音效器会触发 SIGSEGV
+                try { player.audio().setEqualizer(null) } catch (_: Exception) {}
+                
+                // 3. 先停止播放，让 VLC 内部事件处理线程完成清理
+                if (player.status().isPlaying) {
+                    player.controls().stop()
                 }
             } catch (_: Exception) {
-                // 忽略停止时的异常
+                // 忽略异常
             }
-            // 短暂等待 VLC 内部事件处理完成
+            
+            // 4. 短暂等待 VLC 内部状态机切换完成
             try {
-                Thread.sleep(50)
+                Thread.sleep(100)
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
             }
+            
             try {
-                mediaPlayer.release()
+                // 5. 释放媒体播放器实例
+                player.release()
             } catch (_: Exception) {
                 // 忽略释放时的异常
             }
-            try {
-                mediaPlayerFactory.release()
-            } catch (_: Exception) {
-                // 忽略
-            }
+            
+            // 注意：mediaPlayerFactory 不在这里释放，它作为 Koin 单例由应用生命周期管理
+            
             latestVideoFrame = null
         }.apply {
             isDaemon = true
             name = "vlc-release-thread"
             start()
-            // 等待释放完成，最多 2 秒
-            join(2000)
+            // 等待释放完成，最多 2 秒，防止资源泄漏或后续冲突
+            try {
+                join(2000)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
         }
     }
 }
