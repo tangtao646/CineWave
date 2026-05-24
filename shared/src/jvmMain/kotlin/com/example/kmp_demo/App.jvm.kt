@@ -64,7 +64,7 @@ import com.example.kmp_demo.features.radio.RadioRoutes
 import com.example.kmp_demo.features.radio.ui.list.RadioListScreen
 import com.example.kmp_demo.features.radio.player.RadioPlayerManager
 import com.example.kmp_demo.features.radio.ui.list.RadioListViewModel
-import com.example.kmp_demo.features.radio.ui.player.PlayerDetailScreen
+import com.example.kmp_demo.features.radio.ui.DesktopPlayerDetailScreen
 import com.example.kmp_demo.features.radio.ui.search.RadioSearchScreen
 import com.example.kmp_demo.navigation.DesktopRoute
 import androidx.navigation3.runtime.NavBackStack
@@ -140,12 +140,13 @@ fun App() {
             val radioViewModel: RadioListViewModel = koinViewModel()
             val radioPlayerManager = radioViewModel.playerManager
 
-            // 自动管理全屏状态：当离开播放页面时，强制退出全屏模式，确保导航栏能重新显示
+            // 自动管理全屏状态：当进入电台播放器或视频播放页面时，隐藏左侧导航栏
+            // 当离开这些页面时，强制退出全屏模式，确保导航栏能重新显示
             LaunchedEffect(backStack.last()) {
                 val currentRoute = backStack.last()
-                if (currentRoute !is DesktopRoute.FilmPlayer && currentRoute !is DesktopRoute.DomesticPlayer) {
-                    isFullScreen = false
-                }
+                isFullScreen = currentRoute is DesktopRoute.FilmPlayer
+                        || currentRoute is DesktopRoute.DomesticPlayer
+                        || currentRoute is DesktopRoute.RadioPlayer
             }
 
             // 全屏时监听 ESC 键退出全屏 (或者执行返回操作)
@@ -215,9 +216,13 @@ fun App() {
                                     }
 
                                     is DesktopRoute.RadioPlayer -> {
-                                        PlayerDetailScreen(
+                                        // 桌面端使用适配的播放器页面，支持全屏沉浸式体验
+                                        DesktopPlayerDetailScreen(
                                             playerManager = radioPlayerManager,
-                                            onClose = { backStack.removeLast() }
+                                            onClose = {
+                                                isFullScreen = false
+                                                backStack.removeLast()
+                                            }
                                         )
                                     }
 
@@ -377,15 +382,15 @@ fun DesktopNavigationRail(
         }
 
         // 将 MiniPlayer 推到导航栏底部
-        Spacer(modifier = Modifier.weight(1f))
+        //Spacer(modifier = Modifier.weight(1f))
 
         // 底部 MiniPlayer（电台播放时显示）
-        if (radioPlayerManager != null) {
-            MiniPlayerRailItem(
-                playerManager = radioPlayerManager,
-                onClick = onMiniPlayerClick
-            )
-        }
+//        if (radioPlayerManager != null) {
+//            MiniPlayerRailItem(
+//                playerManager = radioPlayerManager,
+//                onClick = onMiniPlayerClick
+//            )
+//        }
     }
 }
 
