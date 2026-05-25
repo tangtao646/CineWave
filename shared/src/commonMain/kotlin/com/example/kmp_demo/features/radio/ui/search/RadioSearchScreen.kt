@@ -32,6 +32,7 @@ fun RadioSearchScreen(
     val playerUiState by viewModel.playerManager.uiState.collectAsState()
     val currentPlayingStation = playerUiState.currentStation
     val isPlaying = playerUiState.isPlaying
+    val hasCurrentStation = currentPlayingStation != null
 
     Scaffold(
         modifier = Modifier.safeContent(),
@@ -150,9 +151,11 @@ fun RadioSearchScreen(
                             }
                         }
                     ) {
+                        // 当有正在播放的电台时，在列表底部预留 MiniPlayerBar 的空间
+                        val listBottomPadding = if (hasCurrentStation) (16 + 80 + 12).dp else 16.dp
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(16.dp),
+                            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = listBottomPadding),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             items(uiState.results, key = { it.uuid }) { station ->

@@ -51,7 +51,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.cash.paging.LoadStateLoading
 import app.cash.paging.compose.collectAsLazyPagingItems
-import app.cash.paging.compose.itemKey
 import com.example.kmp_demo.features.radio.ui.components.SearchBarPlaceholder
 import com.example.kmp_demo.features.radio.ui.components.StationItem
 import com.example.kmp_demo.core.components.PageContainer
@@ -61,9 +60,11 @@ import com.example.kmp_demo.core.components.shimmer
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RadioListScreen(
+    modifier: Modifier= Modifier,
     viewModel: RadioListViewModel,
     onNavigateToSearch: () -> Unit,
-    onNavigateToPlayer: () -> Unit
+    onNavigateToPlayer: () -> Unit,
+    miniPlayerBottomPadding: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val stations = viewModel.stations.collectAsLazyPagingItems()
     val uiState by viewModel.uiState.collectAsState()
@@ -76,11 +77,13 @@ fun RadioListScreen(
     val playerUiState by viewModel.playerManager.uiState.collectAsState()
     val currentPlayingStation = playerUiState.currentStation
     val isPlaying = playerUiState.isPlaying
+    // 是否有正在播放的电台（用于决定是否在列表底部预留 MiniPlayerBar 的空间）
+    val hasCurrentStation = currentPlayingStation != null
 
     var showCountrySheet by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier.fillMaxSize()
+        modifier = modifier
     ) {
         // 1. 搜索与国家切换 Row
         Row(
@@ -167,9 +170,11 @@ fun RadioListScreen(
                         }
                     }
                 ) {
+                    // 当有 MiniPlayerBar 悬浮在列表上方时，通过 miniPlayerBottomPadding 参数预留底部空间
+                    val listBottomPadding = 16.dp + miniPlayerBottomPadding
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
+                        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = listBottomPadding),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(stations.itemCount, key = { index -> index }) { index ->
