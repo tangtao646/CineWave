@@ -1,0 +1,127 @@
+name: Desktop Build (Windows)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  GRADLE_OPTS: "-Xmx4096M -Dorg.gradle.daemon=false"
+
+jobs:
+  desktop-build-windows:
+    name: Build Desktop App (Windows)
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+
+      # 1. 用官方推荐的 winget 确保 Inno Setup 6 编译器绝对可用
+      - name: Install Inno Setup
+        run: |
+          winget install JrSoftware.InnoSetup --silent --accept-source-agreements --accept-package-agreements
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      # 2. 编译绿色版可执行文件目录（100% 成功，绝对不触发恶心的 WiX 311 漏洞）
+      - name: Build Desktop Distributable
+        run: |
+          ./gradlew :desktopApp:createDistributable --no-daemon --stacktrace
+        shell: bash
+
+      # 3. 【核心加固】动态生成一个纯净的 Inno Setup 配置文件 (.iss)
+      # 告诉它：把我刚生成的整个绿色文件夹，暴力封装成一个单文件 Setup.exe！
+      - name: Generate Inno Setup Script
+        shell: pwsh
+        run: |
+          # 自动定位刚刚 Gradle 产出的绿色版根目录
+          $sourcePath = "desktopApp/build/compose/binaries/main/app"
+          if (-not (Test-Path $sourcePath)) {
+              $exeFile = Get-ChildItem -Path "desktopApp/build/compose/binaries" -Filter "*.exe" -Recurse | Select-Object -First 1
+              if ($exeFile) { $sourcePath = $exeFile.DirectoryName }
+          }
+          
+          if (-not $sourcePath) { throw "Could not find built app directory!" }
+          
+          # 将绝对路径转换为 Windows 标准格式
+          $fullSourcePath = [System.IO.Path]::GetFullPath($sourcePath)
+          Write-Host "Target Source Path: $fullSourcePath"
+
+          # 动态写入一个完美的 ISS 配置文件
+          $issContent = @"
+          [Setup]
+          AppName=CineWave
+          AppVersion=1.0.0
+          DefaultDirName={autopf}\CineWave
+          DefaultGroupName=CineWave
+          OutputDir=.
+          OutputBaseFilename=CineWave_Setup
+          Compression=lzma2/max
+          SolidCompression=yes
+          DisableDirPage=no
+          DisableProgramGroupPage=yes
+          PrivilegesRequired=admin
+
+          [Tasks]
+          Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+          [Files]
+          Source: "${fullSourcePath}\CineWave.exe"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "${fullSourcePath}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{group}\CineWave"; Filename: "{app}\CineWave.exe"
+          Name: "{autodesktop}\CineWave"; Filename: "{app}\CineWave.exe"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\CineWave.exe"; Description: "{cm:LaunchProgram,CineWave}"; Flags: nowait postinstall skipifsilent
+          "@
+          
+          [System.IO.File]::WriteAllText("setup.iss", $issContent, [System.Text.Encoding]::UTF8)
+          Write-Host "setup.iss generated successfully!"
+
+      # 4. 绕过 Gradle 插件，直接呼叫 Inno Setup 编译器 (iscc.exe) 编译出真正的安装包
+      - name: Compile Installer EXE
+        run: |
+          iscc.exe setup.iss
+        shell: cmd
+
+      # 5. 上传这个用户梦寐以求的单文件独立安装包
+      - name: Upload Desktop EXE Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-installer
+          path: CineWave_Setup.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      # 6. 发布 GitHub Release，挂载这个单文件安装包
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: "CineWave v${{ github.run_number }}"
+          body: |
+            ## CineWave Desktop App (Windows 标准安装版)
+            
+            - 说明: 这是一个标准的单文件 `.exe` 安装包。
+            - 使用方法: 下载 `CineWave_Setup.exe`，双击运行，根据向导一路点击“下一步”即可完成安装并创建桌面快捷方式。
+          files: CineWave_Setup.exe
+          generate_release_notes: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
