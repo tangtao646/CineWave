@@ -30,29 +30,41 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      # 【核心加固】使用 PowerShell 安装 Inno Setup 并注入环境变量
+      # 1. 用 PowerShell 安全安装 Inno Setup 并注入环境变量
       - name: Install Inno Setup (Required for jpackage .exe)
         run: |
           winget install JrSoftware.InnoSetup --silent --accept-source-agreements --accept-package-agreements
           echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
         shell: pwsh
 
-      # 正常执行打包
+      # 2. 真正执行打包（直接在这里合入救命的区域和编码参数，一次定乾坤）
       - name: Build Desktop App (Windows EXE)
         run: |
-          ./gradlew :desktopApp:packageExe --no-daemon --stacktrace
+          ./gradlew :desktopApp:packageExe \
+            -Dfile.encoding=UTF-8 \
+            -Duser.language=en \
+            -Duser.country=US \
+            --no-daemon --stacktrace 2>&1
         shell: bash
 
-      # 错误捕获
+      # 3. 错误捕获：无论成功失败 (always)，如果挂了就只负责当场 cat 现场日志，绝不重新打包
       - name: Capture all build logs
         if: always()
         shell: bash
         run: |
-          echo "=== 正在强行打印 jpackage 的真实错误日志 ==="
-          # 用通配符 * 强行打印该目录下所有的 err.txt，不需要管时间戳是多少
-          cat desktopApp/build/compose/logs/packageExe/*-err.txt
+          echo "=== Checking jpackage logs directory ==="
+          if [ -d "desktopApp/build/compose/logs/packageExe" ]; then
+             ls -la desktopApp/build/compose/logs/packageExe/
+          
+             echo "------------------ START OF JPACKAGE ERROR LOG ------------------"
+             # 使用通配符打印可能存在的 err.txt，省去手写时间戳的麻烦
+             cat desktopApp/build/compose/logs/packageExe/*-err.txt 2>/dev/null || echo "No err.txt found."
+             echo "------------------- END OF JPACKAGE ERROR LOG -------------------"
+          else
+             echo "No specialized packageExe log directory found. The error might be a general Gradle compilation issue."
+          fi
 
-      # 产物上传
+      # 4. 只有编译成功，才上传 .exe 产物
       - name: Upload Desktop EXE Artifact
         if: success()
         uses: actions/upload-artifact@v4
@@ -62,7 +74,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # 发布 Release
+      # 5. 只有编译成功，才自动发布 release 并挂载附件
       - name: Create GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2

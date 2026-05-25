@@ -44,6 +44,8 @@ compose.desktop {
 
             // Windows 配置
             windows {
+                menu = true
+                shortcut = true
                 menuGroup = "CineWave"
                 upgradeUuid = "c4e5f6a7-b8c9-4d0e-a1f2-3b4c5d6e7f80"
                 iconFile.set(project.file("src/main/resources/icons/icon.ico"))
