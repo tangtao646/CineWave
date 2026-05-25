@@ -11,7 +11,7 @@ jobs:
   desktop-build-windows:
     name: Build Desktop App (Windows)
     runs-on: windows-latest
-    
+
     permissions:
       contents: write
 
@@ -30,61 +30,103 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      # 1. 【终极降维打击】只生成绿色版可执行文件目录，不走 WiX 安装包，没有任何环境和网络依赖
+      # 1. 确保 Inno Setup 6 编译器绝对可用
+      - name: Install Inno Setup
+        run: |
+          winget install JrSoftware.InnoSetup --silent --accept-source-agreements --accept-package-agreements
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      # 2. 编译绿色版可执行文件目录
       - name: Build Desktop Distributable
         run: |
           ./gradlew :desktopApp:createDistributable --no-daemon --stacktrace
         shell: bash
 
-      # 2. 用 Windows 自带的 PowerShell 将绿色的程序文件夹直接压缩为标准的 .zip 包
-      - name: Compress Directory to Zip
+      # 3. 【精准追踪】全自动化地毯式搜索 CineWave.exe 所在的真实绿色版根目录
+      - name: Generate Inno Setup Script
         shell: pwsh
         run: |
-          # 定义可能存在的两条官方输出路径（兼容不同老旧版本的 Compose 插件）
-          $path1 = "desktopApp/build/compose/binaries/main/app"
-          $path2 = "desktopApp/build/compose/binaries/main/suggested-name"
+          Write-Host "Searching for CineWave.exe inside build directory..."
           
-          if (Test-Path $path1) {
-              $sourcePath = $path1
-          } elseif (Test-Path $path2) {
-              $sourcePath = $path2
-          } else {
-              # 兜底：自动寻找目录下含有 .exe 文件的那个应用根目录
+          # 地毯式扫描整个 binaries 目录，精准定位真实的 CineWave.exe 文件
+          $exeFile = Get-ChildItem -Path "desktopApp/build/compose/binaries" -Filter "CineWave.exe" -Recurse | Select-Object -First 1
+          
+          if (-not $exeFile) {
+              # 降级兜底：找任何可能生成的 .exe 启动器
               $exeFile = Get-ChildItem -Path "desktopApp/build/compose/binaries" -Filter "*.exe" -Recurse | Select-Object -First 1
-              if ($exeFile) { $sourcePath = $exeFile.DirectoryName }
           }
 
-          if ($sourcePath) {
-              Write-Host "Found production directory at: $sourcePath"
-              # 压缩为标准的绿色版压缩包
-              Compress-Archive -Path "$sourcePath\*" -DestinationPath "CineWave-Windows-Portable.zip" -Force
-              Write-Host "Successfully generated CineWave-Windows-Portable.zip"
+          if ($exeFile) {
+              # 获取这个 .exe 所在的真实父级目录，并转换为 Windows 绝对路径
+              $fullSourcePath = [System.IO.Path]::GetFullPath($exeFile.DirectoryName)
+              $realExeName = $exeFile.Name
+              Write-Host "🎯 成功抓取真实生产环境路径: $fullSourcePath"
+              Write-Host "🎯 成功抓取启动器文件名: $realExeName"
           } else {
-              throw "Could not find built app directory! Please check Gradle task outputs."
+              throw "❌ 严重错误: 无法在 Gradle 输出目录中找到任何生成的可执行文件！请确认 createDistributable 是否成功。"
           }
+          
+          # 动态写入适配真实路径的 ISS 配置文件
+          $issContent = @"
+          [Setup]
+          AppName=CineWave
+          AppVersion=1.0.0
+          DefaultDirName={autopf}\CineWave
+          DefaultGroupName=CineWave
+          OutputDir=.
+          OutputBaseFilename=CineWave_Setup
+          Compression=lzma2/max
+          SolidCompression=yes
+          DisableDirPage=no
+          DisableProgramGroupPage=yes
+          PrivilegesRequired=admin
 
-      # 3. 上传这份完全由官方安全生成的绿色版 Zip
-      - name: Upload Desktop Zip Artifact
+          [Tasks]
+          Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+          [Files]
+          Source: "${fullSourcePath}\${realExeName}"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "${fullSourcePath}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{group}\CineWave"; Filename: "{app}\${realExeName}"
+          Name: "{autodesktop}\CineWave"; Filename: "{app}\${realExeName}"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\${realExeName}"; Description: "{cm:LaunchProgram,CineWave}"; Flags: nowait postinstall skipifsilent
+          "@
+          
+          [System.IO.File]::WriteAllText("setup.iss", $issContent, [System.Text.Encoding]::UTF8)
+          Write-Host "setup.iss has been generated flawlessly."
+
+      # 4. 直接呼叫 Inno Setup 编译器一键封装
+      - name: Compile Installer EXE
+        run: |
+          iscc.exe setup.iss
+        shell: cmd
+
+      # 5. 上传最终的标准单文件独立安装包
+      - name: Upload Desktop EXE Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-windows-zip
-          path: CineWave-Windows-Portable.zip
+          name: desktop-windows-installer
+          path: CineWave_Setup.exe
           if-no-files-found: error
           retention-days: 7
 
-      # 4. 自动发布 GitHub Release 挂载 Zip
+      # 6. 发布 GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: "CineWave v${{ github.run_number }}"
           body: |
-            ## CineWave Desktop App (Windows 绿色免安装版)
+            ## CineWave Desktop App (Windows 标准安装版)
             
-            - 说明: 微软打包工具链存在多语言已知漏洞。为保证稳定性，此版本采用标准的 Portable 绿色版。
-            - 使用方法: 下载后解压 `.zip` 压缩包，双击里面的 `CineWave.exe` 即可直接运行。
-            - 构建详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          files: CineWave-Windows-Portable.zip
+            - 说明: 这是一个标准的单文件 `.exe` 安装包。
+            - 使用方法: 下载 `CineWave_Setup.exe`，双击运行即可。
+          files: CineWave_Setup.exe
           generate_release_notes: true
           make_latest: true
         env:
