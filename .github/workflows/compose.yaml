@@ -8,7 +8,7 @@ on:
         type: boolean
         default: true
       build-windows:
-        description: 'Build Windows Desktop MSI'
+        description: 'Build Windows Desktop EXE'
         type: boolean
         default: false
       build-android:
