@@ -55,10 +55,11 @@ fun MiniPlayerBar(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+           //.background(Color.White)
             .height(80.dp)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            //.padding(horizontal = 12.dp, vertical = 6.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
+        //shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.primary,
         tonalElevation = 8.dp,
         shadowElevation = 4.dp

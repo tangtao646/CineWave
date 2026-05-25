@@ -71,9 +71,6 @@ import com.example.kmp_demo.features.radio.player.RadioPlayerManager
 /**
  * 桌面端适配的电台播放器详情页。
  *
- * 与 [com.example.kmp_demo.features.radio.ui.player.PlayerDetailScreen] 的区别：
- * - ❌ 移除 [statusBarsPadding]（桌面端无状态栏概念）
- * - ❌ 移除 [ModalBottomSheet]（桌面端无底部手势操作，改用 [DropdownMenu]）
  * - ✅ 支持 ESC 键关闭页面
  * - ✅ 适配桌面端窗口布局，全屏沉浸式体验
  * - ✅ 关闭按钮位置使用标准 padding，不依赖系统栏

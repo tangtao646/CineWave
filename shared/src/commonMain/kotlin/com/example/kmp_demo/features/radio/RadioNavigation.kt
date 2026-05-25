@@ -1,9 +1,16 @@
 package com.example.kmp_demo.features.radio
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
@@ -27,21 +34,21 @@ fun NavGraphBuilder.radioGraph(navController: NavHostController) {
     navigation(startDestination = RadioRoutes.list, route = RadioRoutes.graph) {
         composable(RadioRoutes.list) {
             val viewModel: RadioListViewModel = koinViewModel()
-            // 使用 Box 叠加，让 MiniPlayerBar 真正悬浮在列表之上
-            Box(
-                modifier = Modifier.padding(LocalScaffoldPadding.current)
+            val playerUiState by viewModel.playerManager.uiState.collectAsState()
+            val hasCurrentStation = playerUiState.currentStation != null
+
+            Column(
+                modifier = Modifier.fillMaxSize()
+                    .padding(LocalScaffoldPadding.current)
             ) {
                 RadioListScreen(
+                    modifier = Modifier.weight(1f),
                     viewModel = viewModel,
                     onNavigateToSearch = { navController.navigate(RadioRoutes.search) },
                     onNavigateToPlayer = { navController.navigate(RadioRoutes.player) }
                 )
 
-                // 将 MiniPlayerBar 放在 Box 的底部，实现悬浮效果
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                ) {
+                if (hasCurrentStation) {
                     MiniPlayerBar(
                         playerManager = viewModel.playerManager,
                         onClick = { navController.navigate(RadioRoutes.player) }
