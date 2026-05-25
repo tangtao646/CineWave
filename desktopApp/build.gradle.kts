@@ -60,13 +60,6 @@ compose.desktop {
             appResourcesRootDir.set(layout.projectDirectory.dir("src/main/resources"))
         }
 
-        // ProGuard 配置 - 防止反射调用的类被混淆移除
-        buildTypes {
-            release {
-                proguard {
-                    configurationFiles.from(project.file("proguard-rules.pro"))
-                }
-            }
-        }
+       
     }
 }
