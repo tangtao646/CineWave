@@ -4,7 +4,7 @@ import androidx.paging.ExperimentalPagingApi
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
-import app.cash.paging.map
+import androidx.paging.map
 import com.example.kmp_demo.core.data.remote.BasePagingRemoteMediator
 import com.example.kmp_demo.core.videosource.domain.VideoSource
 import com.example.kmp_demo.features.domestic.data.local.DomesticLocalDataSource

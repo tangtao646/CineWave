@@ -7,10 +7,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import app.cash.paging.LoadStateError
-import app.cash.paging.LoadStateLoading
-import app.cash.paging.LoadStateNotLoading
-import app.cash.paging.compose.LazyPagingItems
+import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
 import com.example.kmp_demo.core.PageStatus
 
 /**
@@ -80,8 +78,8 @@ fun DefaultError(message: String?, onRetry: () -> Unit) {
 @Composable
 fun <T : Any> LazyPagingItems<T>.rememberPageStatus(): PageStatus {
     return when (val refresh = loadState.refresh) {
-        is LoadStateLoading -> if (itemCount == 0) PageStatus.Loading else PageStatus.Content
-        is LoadStateError -> if (itemCount == 0) PageStatus.Error(refresh.error.message) else PageStatus.Content
-        is LoadStateNotLoading -> if (itemCount == 0) PageStatus.Empty else PageStatus.Content
+        is LoadState.Loading -> if (itemCount == 0) PageStatus.Loading else PageStatus.Content
+        is LoadState.Error -> if (itemCount == 0) PageStatus.Error(refresh.error.message) else PageStatus.Content
+        is LoadState.NotLoading -> if (itemCount == 0) PageStatus.Empty else PageStatus.Content
     }
 }

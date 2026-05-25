@@ -22,8 +22,7 @@ ksp = "2.3.8"
 koin = "4.0.3"
 datetime = "0.6.2"
 coilNetworkKtor = "3.2.0"
-cash-paging="3.3.0-alpha02-0.5.1"
-androidx-paging = "3.3.0"
+androidx-paging = "3.5.0"
 media3 = "1.5.1"
 guava = "33.4.0-android"
 materialIconsExtended = "1.7.3"
@@ -45,11 +44,6 @@ compose-multiplatform-lifecycle = "2.11.0-beta01"
 lifecycleViewmodelCompose = "2.8.6"
 lifecycleRuntimeCompose = "2.8.6"
 navigationRuntimeDesktop = "2.9.0-beta01"
-pagingCommonDesktopVersion = "3.5.0"
-pagingComposeAndroidVersion = "3.5.0"
-androidxPagingCommon = "3.5.0"
-pagingComposeDesktopVersion = "3.5.0"
-pagingCommonAndroidVersion = "3.5.0"
 vlcj = "4.8.2"
 
 
@@ -103,17 +97,12 @@ jetbrains-navigation3-ui = { module = "org.jetbrains.androidx.navigation3:naviga
 jetbrains-compose-adaptive-navigation3 = { module = "org.jetbrains.compose.material3.adaptive:adaptive-navigation3", version.ref = "compose-multiplatform-adaptive" }
 jetbrains-lifecycle-viewmodel-navigation3 = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "compose-multiplatform-lifecycle" }
 
-# Paging (Cash App KMP) — 代码基于 app.cash.paging 编写
-paging-common = { group = "app.cash.paging", name = "paging-common", version.ref = "cash-paging" }
-paging-compose-common = { group = "app.cash.paging", name = "paging-compose-common", version.ref = "cash-paging" }
-
-# Paging Runtime (AndroidX) — room-paging 在 Android 上需要 DifferCallback
+# Paging (AndroidX KMP) — 跨平台分页
+paging-common = { group = "androidx.paging", name = "paging-common", version.ref = "androidx-paging" }
+paging-compose = { group = "androidx.paging", name = "paging-compose", version.ref = "androidx-paging" }
 androidx-paging-runtime = { group = "androidx.paging", name = "paging-runtime", version.ref = "androidx-paging" }
-androidx-paging-common = { group = "androidx.paging", name = "paging-common", version.ref = "androidxPagingCommon" }
-androidx-paging-common-desktop = { group = "androidx.paging", name = "paging-common-desktop", version.ref = "pagingCommonDesktopVersion" }
-androidx-paging-compose-desktop = { group = "androidx.paging", name = "paging-compose-desktop", version.ref = "pagingComposeDesktopVersion" }
-androidx-paging-common-android = { group = "androidx.paging", name = "paging-common-android", version.ref = "pagingCommonAndroidVersion" }
-androidx-paging-compose-android = { group = "androidx.paging", name = "paging-compose-android", version.ref = "pagingComposeAndroidVersion" }
+androidx-paging-common-desktop = { group = "androidx.paging", name = "paging-common-desktop", version.ref = "androidx-paging" }
+androidx-paging-compose-desktop = { group = "androidx.paging", name = "paging-compose-desktop", version.ref = "androidx-paging" }
 
 
 # Room (KMP)

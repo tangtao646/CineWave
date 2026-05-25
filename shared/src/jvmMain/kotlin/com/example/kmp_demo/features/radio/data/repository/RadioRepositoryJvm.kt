@@ -1,8 +1,8 @@
 package com.example.kmp_demo.features.radio.data.repository
 
-import app.cash.paging.Pager
-import app.cash.paging.PagingConfig
-import app.cash.paging.PagingData
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
 import com.example.kmp_demo.core.data.paging.InMemoryPagingSource
 import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
 import com.example.kmp_demo.features.radio.data.remote.IpApiService

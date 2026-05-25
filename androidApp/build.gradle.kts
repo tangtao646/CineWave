@@ -32,8 +32,8 @@ dependencies {
 
     // Guava (ListenableFuture)
     implementation(libs.guava.android)
-    implementation(libs.androidx.paging.common.android)
-    implementation(libs.androidx.paging.compose.android)
+    implementation(libs.paging.common)
+    implementation(libs.paging.compose)
 
 }
 
