@@ -1,0 +1,226 @@
+name: CineWave CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type (debug/release)'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+env:
+  GRADLE_OPTS: "-Xmx4096M -Dorg.gradle.daemon=false"
+  GRADLE_CACHE_KEY: gradle-cache-${{ runner.os }}
+
+jobs:
+  # ============================================================
+  # Android Build
+  # ============================================================
+  android-build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+
+      - name: Decode Android Keystore
+        id: decode_keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > /tmp/android_project.jks
+            echo "keystore_path=/tmp/android_project.jks" >> $GITHUB_OUTPUT
+            echo "keystore_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "keystore_available=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Android APK (Debug)
+        if: github.event.inputs.build_type == 'debug' || github.event.inputs.build_type == ''
+        run: |
+          ./gradlew :androidApp:assembleDebug \
+            -Pandroid.injected.invoked.from.ide=false \
+            --no-daemon
+
+      - name: Build Android APK (Release)
+        if: github.event.inputs.build_type == 'release' && steps.decode_keystore.outputs.keystore_available == 'true'
+        env:
+          KEYSTORE_PATH: ${{ steps.decode_keystore.outputs.keystore_path }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'your_keystore_password' }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'your_key_alias' }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || 'your_key_password' }}
+        run: |
+          ./gradlew :androidApp:assembleRelease \
+            -Pandroid.injected.invoked.from.ide=false \
+            -Pandroid.injected.signing.store.file=$KEYSTORE_PATH \
+            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$KEY_PASSWORD \
+            --no-daemon
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-${{ github.event.inputs.build_type || 'debug' }}
+          path: |
+            androidApp/build/outputs/apk/debug/*.apk
+            androidApp/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ============================================================
+  # Desktop Build (macOS)
+  # ============================================================
+  desktop-build-macos:
+    name: Build Desktop App (macOS)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+
+      - name: Install VLC (for Desktop video player)
+        run: brew install vlc
+
+      - name: Build Desktop App (macOS)
+        run: |
+          ./gradlew :desktopApp:packageDmg \
+            --no-daemon
+
+      - name: Upload Desktop DMG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-dmg
+          path: desktopApp/build/compose/binaries/main/dmg/*.dmg
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ============================================================
+  # Desktop Build (Linux)
+  # ============================================================
+  desktop-build-linux:
+    name: Build Desktop App (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+
+      - name: Install VLC (for Desktop video player)
+        run: sudo apt-get update && sudo apt-get install -y vlc libvlc-dev
+
+      - name: Build Desktop App (Linux)
+        run: |
+          ./gradlew :desktopApp:packageDeb \
+            --no-daemon
+
+      - name: Upload Desktop DEB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-deb
+          path: desktopApp/build/compose/binaries/main/deb/*.deb
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ============================================================
+  # Desktop Build (Windows)
+  # ============================================================
+  desktop-build-windows:
+    name: Build Desktop App (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+
+      - name: Build Desktop App (Windows)
+        run: |
+          ./gradlew :desktopApp:packageMsi
+        shell: bash
+
+      - name: Upload Desktop MSI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-msi
+          path: desktopApp/build/compose/binaries/main/msi/*.msi
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ============================================================
+  # Summary
+  # ============================================================
+  summary:
+    name: Build Summary
+    needs:
+      - android-build
+      - desktop-build-macos
+      - desktop-build-linux
+      - desktop-build-windows
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Print Build Summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Android APK | ${{ needs.android-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Desktop (macOS) | ${{ needs.desktop-build-macos.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Desktop (Linux) | ${{ needs.desktop-build-linux.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Desktop (Windows) | ${{ needs.desktop-build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
