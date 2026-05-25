@@ -30,42 +30,49 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      # 【核心修正】改打更为稳健、环境天然支持的 .msi 安装包
-      - name: Build Desktop App (Windows MSI)
+      # 【核心加固】用 Windows 官方的 winget 强行静默安装 Inno Setup，并把路径塞进环境变量
+      - name: Install Inno Setup (Required for jpackage .exe)
         run: |
-          ./gradlew :desktopApp:packageMsi --no-daemon --stacktrace 2>&1
+          winget install JrSoftware.InnoSetup --silent --accept-source-agreements --accept-package-agreements
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $GITHUB_PATH
         shell: bash
 
-      # 冒烟测试与日志捕获：无论成功失败，都会帮你扫描并就地打印可能存在的底层错误日志
+      # 正常执行打包，去掉了 continue-on-error 保持流水线严谨
+      - name: Build Desktop App (Windows EXE)
+        run: |
+          ./gradlew :desktopApp:packageExe --no-daemon --stacktrace 2>&1
+        shell: bash
+
+      # 错误捕获：如果 packageExe 还敢报错，它会把真正的底层错误日志在这里直接打印
       - name: Capture all build logs
         if: always()
         shell: bash
         run: |
           echo "=== Checking jpackage logs directory ==="
-          if [ -d "desktopApp/build/compose/logs/packageMsi" ]; then
-             ls -la desktopApp/build/compose/logs/packageMsi/
+          if [ -d "desktopApp/build/compose/logs/packageExe" ]; then
+             ls -la desktopApp/build/compose/logs/packageExe/
           
-             JPACKAGE_ERR=$(find desktopApp/build/compose/logs/packageMsi -name "jpackage*-err.txt" 2>/dev/null | head -1)
+             JPACKAGE_ERR=$(find desktopApp/build/compose/logs/packageExe -name "jpackage*-err.txt" 2>/dev/null | head -1)
              if [ -n "$JPACKAGE_ERR" ]; then
                 echo "------------------ START OF JPACKAGE ERROR ------------------"
                 cat "$JPACKAGE_ERR"
                 echo "------------------- END OF JPACKAGE ERROR -------------------"
              fi
           else
-             echo "No specialized packageMsi log directory found."
+             echo "No specialized packageExe log directory found."
           fi
 
-      # 只有完全打包成功时，才执行产物上传
-      - name: Upload Desktop MSI Artifact
+      # 只有完全打包成功时，才执行 .exe 产物上传
+      - name: Upload Desktop EXE Artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-msi
-          path: desktopApp/build/compose/binaries/main/msi/*.msi
+          name: desktop-exe
+          path: desktopApp/build/compose/binaries/main/exe/*.exe
           if-no-files-found: error
           retention-days: 7
 
-      # 只有完全成功时才发布 GitHub Release
+      # 只有完全成功时才发 GitHub Release
       - name: Create GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
@@ -73,10 +80,10 @@ jobs:
           tag_name: v${{ github.run_number }}
           name: "CineWave v${{ github.run_number }}"
           body: |
-            ## CineWave Desktop App (Windows MSI)
+            ## CineWave Desktop App (Windows EXE)
             
             - 构建详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             - 代码提交: ${{ github.sha }}
-          files: desktopApp/build/compose/binaries/main/msi/*.msi
+          files: desktopApp/build/compose/binaries/main/exe/*.exe
           generate_release_notes: true
           make_latest: true
