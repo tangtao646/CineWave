@@ -2,100 +2,14 @@ name: CineWave CI/CD
 
 on:
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type (debug/release)'
-        required: true
-        default: 'debug'
-        type: choice
-        options:
-          - debug
-          - release
 
 env:
   GRADLE_OPTS: "-Xmx4096M -Dorg.gradle.daemon=false"
 
 jobs:
-  # ============================================================
-  # Android Build
-  # ============================================================
-  android-build:
-    name: Build Android APK
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
-
-      - name: Decode Android Keystore
-        id: decode_keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > /tmp/android_project.jks
-            echo "keystore_path=/tmp/android_project.jks" >> $GITHUB_OUTPUT
-            echo "keystore_available=true" >> $GITHUB_OUTPUT
-          else
-            echo "keystore_available=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build Android APK (Debug)
-        if: github.event.inputs.build_type == 'debug' || github.event.inputs.build_type == ''
-        run: |
-          ./gradlew :androidApp:assembleDebug \
-            -Pandroid.injected.invoked.from.ide=false \
-            --no-daemon
-
-      - name: Build Android APK (Release with keystore)
-        if: github.event.inputs.build_type == 'release' && steps.decode_keystore.outputs.keystore_available == 'true'
-        env:
-          KEYSTORE_PATH: ${{ steps.decode_keystore.outputs.keystore_path }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'your_keystore_password' }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'your_key_alias' }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || 'your_key_password' }}
-        run: |
-          ./gradlew :androidApp:assembleRelease \
-            -Pandroid.injected.invoked.from.ide=false \
-            -Pandroid.injected.signing.store.file=$KEYSTORE_PATH \
-            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
-            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
-            -Pandroid.injected.signing.key.password=$KEY_PASSWORD \
-            --no-daemon
-
-      - name: Build Android APK (Release without keystore - unsigned)
-        if: github.event.inputs.build_type == 'release' && steps.decode_keystore.outputs.keystore_available != 'true'
-        run: |
-          ./gradlew :androidApp:assembleRelease \
-            -Pandroid.injected.invoked.from.ide=false \
-            --no-daemon
-
-      - name: Upload Android APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk-${{ github.event.inputs.build_type || 'debug' }}
-          path: androidApp/build/outputs/apk/**/*.apk
-          if-no-files-found: error
-          retention-days: 7
-
-  # ============================================================
-  # Desktop Build (macOS)
-  # ============================================================
   desktop-build-macos:
     name: Build Desktop App (macOS)
     runs-on: macos-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -116,219 +30,60 @@ jobs:
 
       - name: Build Desktop App (macOS)
         run: |
-          ./gradlew :desktopApp:packageDmg \
-            --no-daemon
+          ./gradlew :desktopApp:packageDmg --no-daemon
+
+      - name: Mount DMG and run app to capture startup errors
+        run: |
+          DMG_FILE=$(ls desktopApp/build/compose/binaries/main/dmg/*.dmg 2>/dev/null | head -1)
+          if [ -z "$DMG_FILE" ]; then
+            echo "No DMG file found!"
+            exit 1
+          fi
+          echo "Found DMG: $DMG_FILE"
+          
+          # 挂载 DMG
+          MOUNT_POINT=$(hdiutil attach "$DMG_FILE" -nobrowse | tail -1 | awk '{print $3}')
+          echo "Mounted at: $MOUNT_POINT"
+          
+          # 查找 .app 文件
+          APP_PATH=$(find "$MOUNT_POINT" -name "*.app" -maxdepth 2 | head -1)
+          echo "App path: $APP_PATH"
+          
+          if [ -n "$APP_PATH" ]; then
+            # 尝试运行 app 并捕获错误输出
+            echo "=== Attempting to launch app ==="
+            # 使用 open 命令启动，等待几秒后检查崩溃日志
+            open "$APP_PATH"
+            sleep 10
+            
+            # 检查崩溃日志
+            echo "=== Crash logs ==="
+            CRASH_LOG=$(ls -t ~/Library/Logs/DiagnosticReports/*.crash 2>/dev/null | head -3)
+            if [ -n "$CRASH_LOG" ]; then
+              for log in $CRASH_LOG; do
+                echo "--- $log ---"
+                cat "$log"
+              done
+            else
+              echo "No crash logs found"
+            fi
+            
+            # 检查系统日志中关于该 app 的错误
+            echo "=== System log entries for CineWave ==="
+            log show --predicate 'process == "CineWave" OR message contains "CineWave"' --last 30s --info --debug 2>/dev/null | tail -50
+            
+            # 卸载 DMG
+            hdiutil detach "$MOUNT_POINT" -quiet
+          else
+            echo "No .app found in DMG"
+            hdiutil detach "$MOUNT_POINT" -quiet
+            exit 1
+          fi
 
       - name: Upload Desktop DMG Artifact
         uses: actions/upload-artifact@v4
         with:
           name: desktop-dmg
           path: desktopApp/build/compose/binaries/main/dmg/*.dmg
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
-
-  # ============================================================
-  # Desktop Build (Linux)
-  # ============================================================
-  desktop-build-linux:
-    name: Build Desktop App (Linux)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
-
-      - name: Install VLC (for Desktop video player)
-        run: sudo apt-get update && sudo apt-get install -y vlc libvlc-dev
-
-      - name: Build Desktop App (Linux)
-        run: |
-          ./gradlew :desktopApp:packageDeb \
-            --no-daemon
-
-      - name: Upload Desktop DEB Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-deb
-          path: desktopApp/build/compose/binaries/main/deb/*.deb
-          if-no-files-found: warn
-          retention-days: 7
-
-# ============================================================
-  # Desktop Build (Windows)
-  # ============================================================
-  # desktop-build-windows:
-  #   name: Build Desktop App (Windows)
-  #   runs-on: windows-latest
-
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
-
-  #     - name: Setup JDK 17
-  #       uses: actions/setup-java@v4
-  #       with:
-  #         distribution: 'temurin'
-  #         java-version: '17'
-
-  #     - name: Setup Gradle
-  #       uses: gradle/actions/setup-gradle@v4
-  #       with:
-  #         cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
-
-  #     - name: Install WiX Toolset
-  #       id: wix_setup
-  #       run: |
-  #         Write-Host "Installing WiX Toolset v3.11..."
-  #         $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311-binaries.zip"
-  #         $wixZip = "$env:TEMP\wix311.zip"
-  #         $wixDir = "C:\ProgramData\WiX311"
-          
-  #         Invoke-WebRequest -Uri $wixUrl -OutFile $wixZip -UseBasicParsing
-          
-  #         if (-not (Test-Path $wixDir)) {
-  #             New-Item -ItemType Directory -Path $wixDir -Force
-  #         }
-  #         Expand-Archive -Path $wixZip -DestinationPath $wixDir -Force
-          
-  #         # 将 WiX 直接写入系统环境变量，对后续步骤生效
-  #         echo "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-  #         echo "WIX=$wixDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-  #         Write-Host "WiX successfully installed and added to ENV."
-  #       shell: pwsh
-
-  #     # 第一次尝试打包：如果失败，流程不中断，记录状态并走向下一步重试
-  #     - name: Build Desktop App (Windows) - First Try
-  #       id: build_one
-  #       run: |
-  #         ./gradlew :desktopApp:packageMsi --no-daemon
-  #       shell: bash
-  #       continue-on-error: true 
-
-  #     # 第二次尝试打包：仅在第一次失败时触发，执行 clean 后加大日志输出强度 (--info)
-  #     - name: Retry build with clean if failed
-  #       if: steps.build_one.outcome == 'failure'
-  #       run: |
-  #         Write-Host "=== First attempt failed. Cleaning and retrying with --info... ==="
-  #         ./gradlew :desktopApp:clean :desktopApp:packageMsi --no-daemon --info
-  #       shell: bash
-
-  #     # 兜底日志打印：无论成功失败，只要发生过错误或者用于日常留存，打印 jpackage 日志
-  #     - name: Print jpackage error log on Failure
-  #       if: always()
-  #       run: |
-  #         Write-Host "=== Checking jpackage logs ==="
-  #         $logDir = "desktopApp/build/compose/logs/packageMsi"
-  #         if (Test-Path $logDir) {
-  #             Get-ChildItem -Path $logDir -Filter "*.txt" | ForEach-Object {
-  #                 Write-Host "=== File: $($_.Name) ==="
-  #                 Get-Content -Path $_.FullName -Tail 100
-  #                 Write-Host ""
-  #             }
-  #         } else {
-  #             Write-Host "No log files found in $logDir (Build might have passed or failed earlier)."
-  #         }
-  #       shell: pwsh
-
-  #     - name: Upload Desktop MSI Artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: desktop-msi
-  #         path: desktopApp/build/compose/binaries/main/msi/*.msi
-  #         if-no-files-found: error # 改为 error，如果找不到文件尽早让 CI 报错，避免拖累后面的 Release
-  #         retention-days: 7
-
-  # ============================================================
-  # Summary
-  # ============================================================
-  summary:
-    name: Build Summary
-    needs:
-      - android-build
-      - desktop-build-macos
-      - desktop-build-linux
-      # - desktop-build-windows
-    if: always()
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Print Build Summary
-        run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Android APK | ${{ needs.android-build.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Desktop (macOS) | ${{ needs.desktop-build-macos.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Desktop (Linux) | ${{ needs.desktop-build-linux.result }} |" >> $GITHUB_STEP_SUMMARY
-
-  # ============================================================
-  # Release (仅手动触发且构建成功时)
-  # ============================================================
-  release:
-    name: Create Release
-    needs:
-      - android-build
-      - desktop-build-macos
-      - desktop-build-linux
-      # - desktop-build-windows
-    if: github.event_name == 'workflow_dispatch' && !cancelled()
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
-      - name: Flatten and List assets
-        run: |
-          mkdir -p release-dist
-          # 查找所有目标文件并拷贝到扁平目录
-          find release-assets -type f \( -name "*.apk" -o -name "*.dmg" -o -name "*.deb" -o -name "*.msi" \) -exec cp {} release-dist/ \;
-          echo "Final assets to upload:"
-          ls -la release-dist/
-
-      - name: Generate release tag
-        id: tag
-        run: |
-          echo "release_tag=v$(date +'%Y%m%d.%H%M%S')" >> $GITHUB_OUTPUT
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.release_tag }}
-          name: Build ${{ steps.tag.outputs.release_tag }}
-          body: |
-            ## CineWave Build ${{ steps.tag.outputs.release_tag }}
-
-            ### 构建信息
-            - 触发方式: ${{ github.event_name }}
-            - 分支: ${{ github.ref_name }}
-            - Commit: ${{ github.sha }}
-
-            ### 包含的产物
-            - Android APK
-            - Desktop DMG (macOS)
-            - Desktop DEB (Linux)
-            # - Desktop MSI (Windows)
-          files: release-dist/*
-          draft: false
-          prerelease: true
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
