@@ -82,8 +82,8 @@ kotlin {
             implementation(libs.coil.network.ktor3)
 
             // app.cash.paging (KMP 跨平台分页)
-            implementation(libs.paging.common)
-            implementation(libs.paging.compose.common)
+            api(libs.paging.common)
+            api(libs.paging.compose.common)
 
             implementation(libs.room.runtime)
             implementation(libs.room.paging)
@@ -116,6 +116,10 @@ kotlin {
             // Paging (app.cash.paging) — Desktop 端需要显式添加
             implementation(libs.paging.common)
             implementation(libs.paging.compose.common)
+            implementation(libs.androidx.paging.common.desktop)
+            // 需要 androidx.paging:paging-compose-desktop 提供 PagingDataDiffer 等运行时类
+            implementation(libs.androidx.paging.compose.desktop)
+            implementation(libs.androidx.lifecycle.viewmodel.compose.desktop)
 
 
             // Navigation Compose 在 Desktop 上需要 savedstate 兼容库
