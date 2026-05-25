@@ -30,55 +30,20 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      # 1. 正常编译，去掉 continue-on-error。失败时由下方的 always() 步骤接管日志抓取
-      - name: Build Desktop App (Windows MSI) with stacktrace
+      - name: Build Desktop App (Windows EXE)
         run: |
-          ./gradlew :desktopApp:packageMsi --no-daemon --stacktrace 2>&1
+          ./gradlew :desktopApp:packageExe --no-daemon
         shell: bash
 
-      # 2. 无论上面是成功还是失败 (always)，都执行日志捕获，方便你直接在控制台看真凶
-      - name: Capture all build logs
-        if: always()
-        shell: bash
-        run: |
-          echo "=== Search for build output directories ==="
-          find desktopApp/build -type d -maxdepth 5 2>/dev/null | head -30
-          echo ""
-          echo "=== Search for log files ==="
-          find desktopApp/build -name "*.txt" -o -name "*.log" 2>/dev/null | head -20
-          echo ""
-          echo "=== Search for tmp files ==="
-          find desktopApp/build/compose/tmp -type f 2>/dev/null | head -20
-          echo ""
-          echo "=== Search for MSI files ==="
-          find desktopApp/build -name "*.msi" 2>/dev/null | head -10
-          echo ""
-          echo "=== Search for EXE files ==="
-          find desktopApp/build -name "*.exe" 2>/dev/null | head -10
-          echo ""
-          echo "=== Printing jpackage error log detail if exists ==="
-          # 自动寻找可能存在的 jpackage 错误日志并就地打印，省去翻找麻烦
-          JPACKAGE_ERR=$(find desktopApp/build/compose/logs -name "jpackage*-err.txt" 2>/dev/null | head -1)
-          if [ -n "$JPACKAGE_ERR" ]; then
-             echo "Found jpackage error log: $JPACKAGE_ERR"
-             cat "$JPACKAGE_ERR"
-          else
-             echo "No specialized jpackage error log found."
-          fi
-
-      # 3. 只有当前面的编译步骤完全成功时，才执行产物上传。如果有错，这一步会自动跳过
-      - name: Upload Desktop MSI Artifact
-        if: success()
+      - name: Upload Desktop EXE Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-msi
-          path: desktopApp/build/compose/binaries/main/msi/*.msi
+          name: desktop-exe
+          path: desktopApp/build/compose/binaries/main/exe/*.exe
           if-no-files-found: error
           retention-days: 7
 
-      # 4. 只有在完全成功时才发版，彻底杜绝“空壳 Release”
       - name: Create GitHub Release
-        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
@@ -88,6 +53,6 @@ jobs:
             
             - 构建详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             - 代码提交: ${{ github.sha }}
-          files: desktopApp/build/compose/binaries/main/msi/*.msi
+          files: desktopApp/build/compose/binaries/main/exe/*.exe
           generate_release_notes: true
           make_latest: true

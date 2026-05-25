@@ -29,7 +29,7 @@ compose.desktop {
         mainClass = "com.example.kmp_demo.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Exe, TargetFormat.Deb)
             packageName = "CineWave"
             packageVersion = "1.0.0"
 
