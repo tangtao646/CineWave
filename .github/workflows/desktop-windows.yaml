@@ -30,51 +30,42 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      # 【核心新增】帮 Windows 补全 jpackage 依赖的打包链环境变量
-      - name: Add Inno Setup and WiX to PATH
+      # 【核心修正】改打更为稳健、环境天然支持的 .msi 安装包
+      - name: Build Desktop App (Windows MSI)
         run: |
-          # 强行将 Windows 镜像中预装的 Inno Setup 路径注入到 GitHub Actions 的全局 PATH 中
-          echo "C:\Program Files (x86)\Inno Setup 6" >> $GITHUB_PATH
-          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $GITHUB_PATH
+          ./gradlew :desktopApp:packageMsi --no-daemon --stacktrace 2>&1
         shell: bash
 
-      # 正常执行打包，去掉了 continue-on-error 保持流水线严谨
-      - name: Build Desktop App (Windows EXE)
-        run: |
-          ./gradlew :desktopApp:packageExe --no-daemon --stacktrace 2>&1
-        shell: bash
-
-      # 无论成功失败，依然为你兜底扫描和打印具体的错误详情
+      # 冒烟测试与日志捕获：无论成功失败，都会帮你扫描并就地打印可能存在的底层错误日志
       - name: Capture all build logs
         if: always()
         shell: bash
         run: |
           echo "=== Checking jpackage logs directory ==="
-          if [ -d "desktopApp/build/compose/logs/packageExe" ]; then
-             ls -la desktopApp/build/compose/logs/packageExe/
+          if [ -d "desktopApp/build/compose/logs/packageMsi" ]; then
+             ls -la desktopApp/build/compose/logs/packageMsi/
           
-             # 如果生成了特定的 err.txt，直接当场打印
-             JPACKAGE_ERR=$(find desktopApp/build/compose/logs/packageExe -name "jpackage*-err.txt" 2>/dev/null | head -1)
+             JPACKAGE_ERR=$(find desktopApp/build/compose/logs/packageMsi -name "jpackage*-err.txt" 2>/dev/null | head -1)
              if [ -n "$JPACKAGE_ERR" ]; then
                 echo "------------------ START OF JPACKAGE ERROR ------------------"
                 cat "$JPACKAGE_ERR"
                 echo "------------------- END OF JPACKAGE ERROR -------------------"
              fi
           else
-             echo "No specialized packageExe log directory found."
+             echo "No specialized packageMsi log directory found."
           fi
 
-      # 只有完全打包成功时才执行上传产物
-      - name: Upload Desktop EXE Artifact
+      # 只有完全打包成功时，才执行产物上传
+      - name: Upload Desktop MSI Artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-exe
-          path: desktopApp/build/compose/binaries/main/exe/*.exe
+          name: desktop-msi
+          path: desktopApp/build/compose/binaries/main/msi/*.msi
           if-no-files-found: error
           retention-days: 7
 
-      # 只有完全成功时才发版，拒绝空壳 Release
+      # 只有完全成功时才发布 GitHub Release
       - name: Create GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
@@ -82,10 +73,10 @@ jobs:
           tag_name: v${{ github.run_number }}
           name: "CineWave v${{ github.run_number }}"
           body: |
-            ## CineWave Desktop App (Windows EXE)
+            ## CineWave Desktop App (Windows MSI)
             
             - 构建详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             - 代码提交: ${{ github.sha }}
-          files: desktopApp/build/compose/binaries/main/exe/*.exe
+          files: desktopApp/build/compose/binaries/main/msi/*.msi
           generate_release_notes: true
           make_latest: true
