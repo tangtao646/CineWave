@@ -206,7 +206,7 @@ class M3u8CacheInterceptor(
         headers: Map<String, String>? = null,
     ) {
         val totalSegments = playlist.segments.size
-        val segmentsToDownload = playlist.segments.take(50)
+        val segmentsToDownload = playlist.segments.take(15)
         var cachedCount = 0
 
         for (segment in segmentsToDownload) {
