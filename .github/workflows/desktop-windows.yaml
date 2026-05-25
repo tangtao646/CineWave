@@ -37,7 +37,7 @@ jobs:
           echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
         shell: pwsh
 
-      # 2. 真正执行打包（直接在这里合入救命的区域和编码参数，一次定乾坤）
+      # 2. 真正执行打包（核心：直接在这里把救命的区域和编码参数焊死！不再裸奔！）
       - name: Build Desktop App (Windows EXE)
         run: |
           ./gradlew :desktopApp:packageExe \
@@ -47,21 +47,16 @@ jobs:
             --no-daemon --stacktrace 2>&1
         shell: bash
 
-      # 3. 错误捕获：无论成功失败 (always)，如果挂了就只负责当场 cat 现场日志，绝不重新打包
+      # 3. 错误捕获：如果上面带参数的打包还敢挂，这里会直接 cat 真实日志。如果成功了，这一步就会显示 "No err.txt found."
       - name: Capture all build logs
         if: always()
         shell: bash
         run: |
-          echo "=== Checking jpackage logs directory ==="
+          echo "=== 正在强行打印 jpackage 的真实错误日志 ==="
           if [ -d "desktopApp/build/compose/logs/packageExe" ]; then
-             ls -la desktopApp/build/compose/logs/packageExe/
-          
-             echo "------------------ START OF JPACKAGE ERROR LOG ------------------"
-             # 使用通配符打印可能存在的 err.txt，省去手写时间戳的麻烦
              cat desktopApp/build/compose/logs/packageExe/*-err.txt 2>/dev/null || echo "No err.txt found."
-             echo "------------------- END OF JPACKAGE ERROR LOG -------------------"
           else
-             echo "No specialized packageExe log directory found. The error might be a general Gradle compilation issue."
+             echo "No specialized packageExe log directory found."
           fi
 
       # 4. 只有编译成功，才上传 .exe 产物
