@@ -1,8 +1,8 @@
 package com.example.kmp_demo.features.radio.ui.list
 
 import androidx.lifecycle.viewModelScope
-import app.cash.paging.PagingData
-import app.cash.paging.cachedIn
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.example.kmp_demo.core.BaseMviViewModel
 import com.example.kmp_demo.core.IUiEffect
 import com.example.kmp_demo.core.IUiIntent

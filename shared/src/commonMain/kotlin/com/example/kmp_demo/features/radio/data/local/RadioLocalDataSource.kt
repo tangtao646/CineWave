@@ -1,6 +1,6 @@
 package com.example.kmp_demo.features.radio.data.local
 
-import app.cash.paging.PagingSource
+import androidx.paging.PagingSource
 import com.example.kmp_demo.core.data.local.room.BaseLocalDataSourceImpl
 import com.example.kmp_demo.core.data.local.room.CoreRemoteKeyDao
 import com.example.kmp_demo.features.radio.data.local.model.RadioStationEntity

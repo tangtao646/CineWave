@@ -1,10 +1,10 @@
 package com.example.kmp_demo.features.radio.data.repository
 
-import app.cash.paging.ExperimentalPagingApi
-import app.cash.paging.Pager
-import app.cash.paging.PagingConfig
-import app.cash.paging.PagingData
-import app.cash.paging.map
+import androidx.paging.ExperimentalPagingApi
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.map
 import com.example.kmp_demo.features.radio.data.local.RadioLocalDataSource
 import com.example.kmp_demo.features.radio.data.local.RadioQueryParameter
 import com.example.kmp_demo.features.radio.data.local.model.RadioStationEntity

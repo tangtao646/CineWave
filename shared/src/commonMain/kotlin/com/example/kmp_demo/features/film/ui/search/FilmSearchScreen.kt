@@ -16,8 +16,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
-import app.cash.paging.compose.collectAsLazyPagingItems
-import app.cash.paging.compose.itemKey
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import com.example.kmp_demo.core.components.PageContainer
 import com.example.kmp_demo.core.components.gridColumns
 import com.example.kmp_demo.core.components.rememberPageStatus

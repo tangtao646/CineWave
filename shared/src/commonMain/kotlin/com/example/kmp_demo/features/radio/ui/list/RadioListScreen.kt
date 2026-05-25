@@ -49,8 +49,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.cash.paging.LoadStateLoading
-import app.cash.paging.compose.collectAsLazyPagingItems
+import androidx.paging.LoadState
+import androidx.paging.compose.collectAsLazyPagingItems
 import com.example.kmp_demo.features.radio.ui.components.SearchBarPlaceholder
 import com.example.kmp_demo.features.radio.ui.components.StationItem
 import com.example.kmp_demo.core.components.PageContainer
@@ -71,7 +71,7 @@ fun RadioListScreen(
     val refreshState = rememberPullToRefreshState()
     val pageStatus = stations.rememberPageStatus()
 
-    val isRefreshing = stations.loadState.refresh is LoadStateLoading && stations.itemCount > 0
+    val isRefreshing = stations.loadState.refresh is LoadState.Loading && stations.itemCount > 0
 
     // 统一观察 playerManager 的聚合状态
     val playerUiState by viewModel.playerManager.uiState.collectAsState()
@@ -220,7 +220,7 @@ fun RadioListScreen(
                         }
 
                         // 处理加载更多 (Footer)
-                        if (stations.loadState.append is LoadStateLoading) {
+                        if (stations.loadState.append is LoadState.Loading) {
                             item {
                                 Box(
                                     Modifier

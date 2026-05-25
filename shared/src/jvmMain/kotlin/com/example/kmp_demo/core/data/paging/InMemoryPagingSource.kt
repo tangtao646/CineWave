@@ -1,7 +1,7 @@
 package com.example.kmp_demo.core.data.paging
 
-import app.cash.paging.PagingSource
-import app.cash.paging.PagingState
+import androidx.paging.PagingSource
+import androidx.paging.PagingState
 import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
 
 /**
