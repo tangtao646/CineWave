@@ -223,3 +223,53 @@ jobs:
           echo "| Desktop (macOS) | ${{ needs.desktop-build-macos.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Desktop (Linux) | ${{ needs.desktop-build-linux.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Desktop (Windows) | ${{ needs.desktop-build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================================
+  # Release (仅手动触发且构建成功时)
+  # ============================================================
+  release:
+    name: Create Release
+    needs:
+      - android-build
+      - desktop-build-macos
+      - desktop-build-linux
+      - desktop-build-windows
+    if: github.event_name == 'workflow_dispatch' && !cancelled()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Generate release tag
+        id: tag
+        run: |
+          echo "release_tag=v$(date +'%Y%m%d.%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          name: Build ${{ steps.tag.outputs.release_tag }}
+          body: |
+            ## CineWave Build ${{ steps.tag.outputs.release_tag }}
+
+            ### 构建信息
+            - 触发方式: ${{ github.event_name }}
+            - 分支: ${{ github.ref_name }}
+            - Commit: ${{ github.sha }}
+
+            ### 包含的产物
+            - Android APK
+            - Desktop DMG (macOS)
+            - Desktop DEB (Linux)
+            - Desktop MSI (Windows)
+          files: |
+            android-apk-*/*.apk
+            desktop-dmg/*.dmg
+            desktop-deb/*.deb
+            desktop-msi/*.msi
+          draft: false
+          prerelease: true
