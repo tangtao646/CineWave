@@ -1,7 +1,7 @@
 package com.example.kmp_demo.features.film.data.remote
 
-import androidx.paging.PagingSource
-import androidx.paging.PagingState
+import app.cash.paging.PagingSource
+import app.cash.paging.PagingState
 import com.example.kmp_demo.features.film.data.remote.mapper.toMovie
 import com.example.kmp_demo.features.film.domain.model.Movie
 

@@ -18,7 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
-import androidx.paging.LoadState
+import app.cash.paging.LoadState
+import app.cash.paging.LoadStateError
+import app.cash.paging.LoadStateLoading
 import app.cash.paging.compose.collectAsLazyPagingItems
 import app.cash.paging.compose.itemKey
 import com.example.kmp_demo.LocalScaffoldPadding
@@ -159,7 +161,7 @@ fun FilmHomeScreen(
                     }
                 }
 
-                if (movies.loadState.append is LoadState.Loading) {
+                if (movies.loadState.append is LoadStateLoading) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Box(
                             modifier = Modifier
@@ -172,9 +174,9 @@ fun FilmHomeScreen(
                     }
                 }
 
-                if (movies.loadState.append is LoadState.Error) {
+                if (movies.loadState.append is LoadStateError) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        val error = (movies.loadState.append as LoadState.Error).error
+                        val error = (movies.loadState.append as LoadStateError).error
                         TextButton(
                             onClick = { movies.retry() },
                             modifier = Modifier

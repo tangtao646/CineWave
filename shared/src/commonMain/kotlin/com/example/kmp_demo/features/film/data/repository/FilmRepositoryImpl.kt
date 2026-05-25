@@ -1,6 +1,10 @@
 package com.example.kmp_demo.features.film.data.repository
 
-import androidx.paging.*
+import app.cash.paging.ExperimentalPagingApi
+import app.cash.paging.Pager
+import app.cash.paging.PagingConfig
+import app.cash.paging.PagingData
+import app.cash.paging.map
 import com.example.kmp_demo.core.data.remote.BasePagingRemoteMediator
 import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
 import com.example.kmp_demo.features.film.data.local.FilmLocalDataSource

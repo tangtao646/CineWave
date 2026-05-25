@@ -17,7 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
-import androidx.paging.LoadState
+import app.cash.paging.LoadState
+import app.cash.paging.LoadStateError
+import app.cash.paging.LoadStateLoading
 import app.cash.paging.compose.collectAsLazyPagingItems
 import app.cash.paging.compose.itemKey
 import com.example.kmp_demo.LocalScaffoldPadding
@@ -154,7 +156,7 @@ fun DomesticHomeScreen(
                 }
 
                 // 加载更多指示器
-                if (mediaItems.loadState.append is LoadState.Loading) {
+                if (mediaItems.loadState.append is LoadStateLoading) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Box(
                             modifier = Modifier
@@ -168,9 +170,9 @@ fun DomesticHomeScreen(
                 }
 
                 // 加载更多失败 — 重试按钮
-                if (mediaItems.loadState.append is LoadState.Error) {
+                if (mediaItems.loadState.append is LoadStateError) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        val error = (mediaItems.loadState.append as LoadState.Error).error
+                        val error = (mediaItems.loadState.append as LoadStateError).error
                         TextButton(
                             onClick = { mediaItems.retry() },
                             modifier = Modifier

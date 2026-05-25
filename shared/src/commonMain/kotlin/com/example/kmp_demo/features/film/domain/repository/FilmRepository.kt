@@ -1,6 +1,6 @@
 package com.example.kmp_demo.features.film.domain.repository
 
-import androidx.paging.PagingData
+import app.cash.paging.PagingData
 import com.example.kmp_demo.features.film.data.remote.dto.GenreDto
 import com.example.kmp_demo.features.film.domain.model.Movie
 import com.example.kmp_demo.features.film.domain.model.MovieDetail

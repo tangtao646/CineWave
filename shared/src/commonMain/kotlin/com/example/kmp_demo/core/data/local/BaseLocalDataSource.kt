@@ -1,6 +1,6 @@
 package com.example.kmp_demo.core.data.local
 
-import app.cash.paging.PagingSource
+import androidx.paging.PagingSource
 
 interface BaseLocalDataSource<T : Any, K: Any> {
     suspend fun insert(data: List<T>, key: K)

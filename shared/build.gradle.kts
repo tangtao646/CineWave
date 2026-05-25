@@ -88,6 +88,9 @@ kotlin {
             implementation(libs.room.runtime)
             implementation(libs.room.paging)
 
+            // Room 的 PagingSource 来自 androidx.paging，需要显式添加
+            implementation(libs.androidx.paging.common)
+
             implementation(libs.koin.core)
             implementation(libs.koin.compose)
             implementation(libs.koin.compose.viewmodel)

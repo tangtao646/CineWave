@@ -2,9 +2,9 @@ package com.example.kmp_demo.features.film.ui.search
 
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.viewModelScope
-import androidx.paging.PagingData
-import androidx.paging.cachedIn
-import androidx.paging.filter
+import app.cash.paging.PagingData
+import app.cash.paging.cachedIn
+import app.cash.paging.filter
 import com.example.kmp_demo.core.BaseMviViewModel
 import com.example.kmp_demo.core.IUiEffect
 import com.example.kmp_demo.core.IUiIntent

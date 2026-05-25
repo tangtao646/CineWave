@@ -1,6 +1,6 @@
 package com.example.kmp_demo.features.film.data.remote
 
-import androidx.paging.ExperimentalPagingApi
+import app.cash.paging.ExperimentalPagingApi
 import com.example.kmp_demo.core.data.remote.BasePagingRemoteMediator
 import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
 import com.example.kmp_demo.features.film.data.local.FilmLocalDataSource

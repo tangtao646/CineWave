@@ -1,6 +1,6 @@
 package com.example.kmp_demo.features.domestic.domain.repository
 
-import androidx.paging.PagingData
+import app.cash.paging.PagingData
 import com.example.kmp_demo.core.videosource.domain.VideoSource
 import com.example.kmp_demo.features.domestic.domain.model.DomesticMedia
 import kotlinx.coroutines.flow.Flow

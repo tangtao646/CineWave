@@ -15,7 +15,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.paging.LoadState
+import app.cash.paging.LoadState
+import app.cash.paging.LoadStateLoading
 import app.cash.paging.compose.collectAsLazyPagingItems
 import app.cash.paging.compose.itemKey
 import com.example.kmp_demo.core.components.PageContainer
@@ -130,7 +131,7 @@ fun FilmSearchScreen(
                         }
 
                         // 分页加载态 Footer
-                        if (searchResults.loadState.append is LoadState.Loading) {
+                        if (searchResults.loadState.append is LoadStateLoading) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 Box(
                                     modifier = Modifier.fillMaxWidth().padding(16.dp),
