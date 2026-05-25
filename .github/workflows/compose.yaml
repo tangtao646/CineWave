@@ -58,7 +58,7 @@ jobs:
             -Pandroid.injected.invoked.from.ide=false \
             --no-daemon
 
-      - name: Build Android APK (Release)
+      - name: Build Android APK (Release with keystore)
         if: github.event.inputs.build_type == 'release' && steps.decode_keystore.outputs.keystore_available == 'true'
         env:
           KEYSTORE_PATH: ${{ steps.decode_keystore.outputs.keystore_path }}
@@ -74,14 +74,19 @@ jobs:
             -Pandroid.injected.signing.key.password=$KEY_PASSWORD \
             --no-daemon
 
+      - name: Build Android APK (Release without keystore - unsigned)
+        if: github.event.inputs.build_type == 'release' && steps.decode_keystore.outputs.keystore_available != 'true'
+        run: |
+          ./gradlew :androidApp:assembleRelease \
+            -Pandroid.injected.invoked.from.ide=false \
+            --no-daemon
+
       - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-apk-${{ github.event.inputs.build_type || 'debug' }}
-          path: |
-            androidApp/build/outputs/apk/debug/*.apk
-            androidApp/build/outputs/apk/release/*.apk
-          if-no-files-found: warn
+          path: androidApp/build/outputs/apk/**/*.apk
+          if-no-files-found: error
           retention-days: 7
 
   # ============================================================
@@ -284,35 +289,19 @@ jobs:
       contents: write
 
     steps:
-      - name: Download Android APK
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          # 尝试下载 release 或 debug 的 artifact，如果不存在则忽略
-          pattern: android-apk-*
           path: release-assets
           merge-multiple: true
 
-      - name: Download Desktop DMG
-        uses: actions/download-artifact@v4
-        with:
-          name: desktop-dmg
-          path: release-assets
-
-      - name: Download Desktop DEB
-        uses: actions/download-artifact@v4
-        with:
-          name: desktop-deb
-          path: release-assets
-
-      # - name: Download Desktop MSI
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     name: desktop-msi
-      #     path: release-assets
-
-      - name: List downloaded files
+      - name: Flatten and List assets
         run: |
-          ls -la release-assets/
+          mkdir -p release-dist
+          # 查找所有目标文件并拷贝到扁平目录
+          find release-assets -type f \( -name "*.apk" -o -name "*.dmg" -o -name "*.deb" -o -name "*.msi" \) -exec cp {} release-dist/ \;
+          echo "Final assets to upload:"
+          ls -la release-dist/
 
       - name: Generate release tag
         id: tag
@@ -337,7 +326,7 @@ jobs:
             - Desktop DMG (macOS)
             - Desktop DEB (Linux)
             # - Desktop MSI (Windows)
-          files: release-assets/*
+          files: release-dist/*
           draft: false
           prerelease: true
           fail_on_unmatched_files: true

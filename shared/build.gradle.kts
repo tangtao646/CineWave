@@ -20,23 +20,23 @@ kotlin {
 //            isStatic = true
 //        }
 //    }
-    
+
     jvm()
-    
+
     androidLibrary {
-       namespace = "com.example.kmp_demo.shared"
-       compileSdk = libs.versions.android.compileSdk.get().toInt()
-       minSdk = libs.versions.android.minSdk.get().toInt()
-    
-       compilerOptions {
-           jvmTarget = JvmTarget.JVM_11
-       }
-       androidResources {
-           enable = true
-       }
-       withHostTest {
-           isIncludeAndroidResources = true
-       }
+        namespace = "com.example.kmp_demo.shared"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+
+        compilerOptions {
+            jvmTarget = JvmTarget.JVM_11
+        }
+        androidResources {
+            enable = true
+        }
+        withHostTest {
+            isIncludeAndroidResources = true
+        }
     }
 
 
@@ -136,7 +136,7 @@ room {
 dependencies {
     // 关键修复：添加 CommonMainMetadata 的 KSP 处理
     add("kspCommonMainMetadata", libs.room.compiler)
-    
+
     // 平台特定的 KSP 处理
     add("kspAndroid", libs.room.compiler)
     // iOS 目标可能不可用（无 Xcode），条件添加
