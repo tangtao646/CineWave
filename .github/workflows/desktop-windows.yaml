@@ -30,58 +30,52 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      # 1. 用 PowerShell 安全安装 Inno Setup 并注入环境变量
-      - name: Install Inno Setup (Required for jpackage .exe)
+      # 1. 【降维打击】只编译全独立胖 Jar，完全绕开 packageExe 的 WiX 地雷
+      - name: Build Desktop UberJar
         run: |
-          winget install JrSoftware.InnoSetup --silent --accept-source-agreements --accept-package-agreements
-          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+          ./gradlew :desktopApp:packageUberJar --no-daemon --stacktrace
+        shell: bash
+
+      # 2. 用快捷轻量工具把 JAR 直接套壳成真正的 Windows EXE，不需要任何恶心的安装包环境
+      - name: Convert JAR to EXE
         shell: pwsh
-
-      # 2. 真正执行打包（核心：直接在这里把救命的区域和编码参数焊死！不再裸奔！）
-      - name: Build Desktop App (Windows EXE)
         run: |
-          ./gradlew :desktopApp:packageExe \
-            -Dfile.encoding=UTF-8 \
-            -Duser.language=en \
-            -Duser.country=US \
-            --no-daemon --stacktrace 2>&1
-        shell: bash
+          # 下载轻量级开源 Jar 转 Exe 工具
+          Invoke-WebRequest -Uri "https://github.com/vtotiger/jexe/releases/download/v1.0.0/jexe.exe" -OutFile "jexe.exe"
+          
+          # 寻找编译出来的 jar 包路径
+          $jarFile = Get-ChildItem -Path "desktopApp/build/compose/jars/" -Filter "*.jar" | Select-Object -First 1
+          
+          if ($jarFile) {
+              echo "Found JAR: $($jarFile.FullName)"
+              # 直接融合成单文件绿色版 EXE
+              ./jexe.exe -jar $jarFile.FullName -output "CineWave.exe"
+              echo "Successfully generated CineWave.exe"
+          } else {
+              throw "Could not find built JAR file!"
+          }
 
-      # 3. 错误捕获：如果上面带参数的打包还敢挂，这里会直接 cat 真实日志。如果成功了，这一步就会显示 "No err.txt found."
-      - name: Capture all build logs
-        if: always()
-        shell: bash
-        run: |
-          echo "=== 正在强行打印 jpackage 的真实错误日志 ==="
-          if [ -d "desktopApp/build/compose/logs/packageExe" ]; then
-             cat desktopApp/build/compose/logs/packageExe/*-err.txt 2>/dev/null || echo "No err.txt found."
-          else
-             echo "No specialized packageExe log directory found."
-          fi
-
-      # 4. 只有编译成功，才上传 .exe 产物
+      # 3. 上传这纯净的、没有 WiX 污染的单文件 EXE
       - name: Upload Desktop EXE Artifact
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: desktop-exe
-          path: desktopApp/build/compose/binaries/main/exe/*.exe
+          path: CineWave.exe
           if-no-files-found: error
           retention-days: 7
 
-      # 5. 只有编译成功，才自动发布 release 并挂载附件
+      # 4. 发布 GitHub Release
       - name: Create GitHub Release
-        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: "CineWave v${{ github.run_number }}"
           body: |
-            ## CineWave Desktop App (Windows EXE)
+            ## CineWave Desktop App (Windows 绿色版)
             
+            - 说明: 无需安装，下载后双击即可直接运行！
             - 构建详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            - 代码提交: ${{ github.sha }}
-          files: desktopApp/build/compose/binaries/main/exe/*.exe
+          files: CineWave.exe
           generate_release_notes: true
           make_latest: true
         env:
