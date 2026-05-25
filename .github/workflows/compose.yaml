@@ -267,7 +267,6 @@ jobs:
           echo "| Android APK | ${{ needs.android-build.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Desktop (macOS) | ${{ needs.desktop-build-macos.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Desktop (Linux) | ${{ needs.desktop-build-linux.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Desktop (Windows) | ${{ needs.desktop-build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
 
   # ============================================================
   # Release (仅手动触发且构建成功时)
@@ -288,8 +287,10 @@ jobs:
       - name: Download Android APK
         uses: actions/download-artifact@v4
         with:
-          name: android-apk-${{ github.event.inputs.build_type || 'debug' }}
+          # 尝试下载 release 或 debug 的 artifact，如果不存在则忽略
+          pattern: android-apk-*
           path: release-assets
+          merge-multiple: true
 
       - name: Download Desktop DMG
         uses: actions/download-artifact@v4
