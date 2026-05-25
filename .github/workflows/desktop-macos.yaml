@@ -1,4 +1,4 @@
-name: CineWave CI/CD
+name: Desktop Build (MacOs)
 
 on:
   workflow_dispatch:
