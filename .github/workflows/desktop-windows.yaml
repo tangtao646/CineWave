@@ -30,31 +30,34 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
+      # 【修正 1】去掉了 continue-on-error: true，让失败暴露在最合理的步骤
       - name: Build Desktop App (Windows EXE)
         run: |
           ./gradlew :desktopApp:packageExe --no-daemon --stacktrace 2>&1
         shell: bash
-        continue-on-error: true
 
+      # 【修正 2】这个步骤会在上方成功或失败时都执行 (always)。它会帮你把藏在深处的错误日志捞出来打印
       - name: Capture all build logs
         if: always()
         shell: bash
         run: |
-          echo "=== desktopApp/build directory tree ==="
-          find desktopApp/build -maxdepth 6 -type d 2>/dev/null | head -50
-          echo ""
           echo "=== All .txt and .log files ==="
           find desktopApp/build -name "*.txt" -o -name "*.log" 2>/dev/null | head -20
           echo ""
-          echo "=== All .exe files ==="
-          find desktopApp/build -name "*.exe" 2>/dev/null | head -10
-          echo ""
-          echo "=== All .msi files ==="
-          find desktopApp/build -name "*.msi" 2>/dev/null | head -10
-          echo ""
-          echo "=== compose/tmp directory ==="
-          find desktopApp/build/compose -type f 2>/dev/null | head -30
+          
+          echo "=== Printing specialized jpackage error log ==="
+          # 自动寻找以 -err.txt 结尾的 jpackage 崩溃日志
+          JPACKAGE_ERR=$(find desktopApp/build/compose/logs -name "jpackage*-err.txt" 2>/dev/null | head -1)
+          if [ -n "$JPACKAGE_ERR" ]; then
+             echo "Found target log: $JPACKAGE_ERR"
+             echo "------------------ START OF LOG ------------------"
+             cat "$JPACKAGE_ERR"
+             echo "------------------- END OF LOG -------------------"
+          else
+             echo "No jpackage error log (*-err.txt) was generated. The failure might be standard Gradle compilation error."
+          fi
 
+      # 【修正 3】只有在完全成功（确实生成了exe）时才上传
       - name: Upload Desktop EXE Artifact
         if: success()
         uses: actions/upload-artifact@v4
@@ -64,13 +67,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # 【修正 4】只有在完全成功时才发 release，拒绝空壳 Release
       - name: Create GitHub Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: "CineWave v${{ github.run_number }}"
           body: |
-            ## CineWave Desktop App (Windows)
+            ## CineWave Desktop App (Windows EXE)
             
             - 构建详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             - 代码提交: ${{ github.sha }}
