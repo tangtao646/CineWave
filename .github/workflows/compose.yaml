@@ -16,6 +16,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+
 jobs:
   # ============================================================
   # 一键调度器：通过 workflow_call 复用各平台独立的 workflow
