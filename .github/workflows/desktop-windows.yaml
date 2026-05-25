@@ -30,34 +30,43 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      - name: Build Desktop App (Windows MSI)
+      # 1. 正常编译，去掉 continue-on-error。失败时由下方的 always() 步骤接管日志抓取
+      - name: Build Desktop App (Windows MSI) with stacktrace
         run: |
-          ./gradlew :desktopApp:packageMsi --no-daemon
+          ./gradlew :desktopApp:packageMsi --no-daemon --stacktrace 2>&1
         shell: bash
-        continue-on-error: true
 
-      - name: Capture jpackage error logs
+      # 2. 无论上面是成功还是失败 (always)，都执行日志捕获，方便你直接在控制台看真凶
+      - name: Capture all build logs
         if: always()
         shell: bash
         run: |
-          echo "=== jpackage stdout logs ==="
-          ls -la desktopApp/build/compose/logs/packageMsi/ 2>/dev/null || echo "No log dir"
-          for f in desktopApp/build/compose/logs/packageMsi/*-out.txt; do
-            if [ -f "$f" ]; then
-              echo "--- $f ---"
-              cat "$f"
-            fi
-          done
-          echo "=== jpackage stderr logs ==="
-          for f in desktopApp/build/compose/logs/packageMsi/*-err.txt; do
-            if [ -f "$f" ]; then
-              echo "--- $f ---"
-              cat "$f"
-            fi
-          done
-          echo "=== jpackage args ==="
-          cat desktopApp/build/compose/tmp/packageMsi.args.txt 2>/dev/null || echo "No args file"
+          echo "=== Search for build output directories ==="
+          find desktopApp/build -type d -maxdepth 5 2>/dev/null | head -30
+          echo ""
+          echo "=== Search for log files ==="
+          find desktopApp/build -name "*.txt" -o -name "*.log" 2>/dev/null | head -20
+          echo ""
+          echo "=== Search for tmp files ==="
+          find desktopApp/build/compose/tmp -type f 2>/dev/null | head -20
+          echo ""
+          echo "=== Search for MSI files ==="
+          find desktopApp/build -name "*.msi" 2>/dev/null | head -10
+          echo ""
+          echo "=== Search for EXE files ==="
+          find desktopApp/build -name "*.exe" 2>/dev/null | head -10
+          echo ""
+          echo "=== Printing jpackage error log detail if exists ==="
+          # 自动寻找可能存在的 jpackage 错误日志并就地打印，省去翻找麻烦
+          JPACKAGE_ERR=$(find desktopApp/build/compose/logs -name "jpackage*-err.txt" 2>/dev/null | head -1)
+          if [ -n "$JPACKAGE_ERR" ]; then
+             echo "Found jpackage error log: $JPACKAGE_ERR"
+             cat "$JPACKAGE_ERR"
+          else
+             echo "No specialized jpackage error log found."
+          fi
 
+      # 3. 只有当前面的编译步骤完全成功时，才执行产物上传。如果有错，这一步会自动跳过
       - name: Upload Desktop MSI Artifact
         if: success()
         uses: actions/upload-artifact@v4
@@ -67,7 +76,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # 4. 只有在完全成功时才发版，彻底杜绝“空壳 Release”
       - name: Create GitHub Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
