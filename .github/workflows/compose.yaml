@@ -1,10 +1,6 @@
 name: CineWave CI/CD
 
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
     inputs:
       build_type:
@@ -251,6 +247,10 @@ jobs:
         run: |
           echo "release_tag=v$(date +'%Y%m%d.%H%M%S')" >> $GITHUB_OUTPUT
 
+      - name: List downloaded files
+        run: |
+          find ./release-assets -type f -ls
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -269,14 +269,9 @@ jobs:
             - Desktop DMG (macOS)
             - Desktop DEB (Linux)
             - Desktop MSI (Windows)
-          files: |
-            android-apk-*/*.apk
-            desktop-dmg/*.dmg
-            desktop-deb/*.deb
-            desktop-msi/*.msi
+          files: ./release-assets/*
           draft: false
           prerelease: true
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
