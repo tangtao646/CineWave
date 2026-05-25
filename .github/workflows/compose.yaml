@@ -163,86 +163,86 @@ jobs:
 # ============================================================
   # Desktop Build (Windows)
   # ============================================================
-  desktop-build-windows:
-    name: Build Desktop App (Windows)
-    runs-on: windows-latest
+  # desktop-build-windows:
+  #   name: Build Desktop App (Windows)
+  #   runs-on: windows-latest
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+  #     - name: Setup JDK 17
+  #       uses: actions/setup-java@v4
+  #       with:
+  #         distribution: 'temurin'
+  #         java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+  #     - name: Setup Gradle
+  #       uses: gradle/actions/setup-gradle@v4
+  #       with:
+  #         cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      - name: Install WiX Toolset
-        id: wix_setup
-        run: |
-          Write-Host "Installing WiX Toolset v3.11..."
-          $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311-binaries.zip"
-          $wixZip = "$env:TEMP\wix311.zip"
-          $wixDir = "C:\ProgramData\WiX311"
+  #     - name: Install WiX Toolset
+  #       id: wix_setup
+  #       run: |
+  #         Write-Host "Installing WiX Toolset v3.11..."
+  #         $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311-binaries.zip"
+  #         $wixZip = "$env:TEMP\wix311.zip"
+  #         $wixDir = "C:\ProgramData\WiX311"
           
-          Invoke-WebRequest -Uri $wixUrl -OutFile $wixZip -UseBasicParsing
+  #         Invoke-WebRequest -Uri $wixUrl -OutFile $wixZip -UseBasicParsing
           
-          if (-not (Test-Path $wixDir)) {
-              New-Item -ItemType Directory -Path $wixDir -Force
-          }
-          Expand-Archive -Path $wixZip -DestinationPath $wixDir -Force
+  #         if (-not (Test-Path $wixDir)) {
+  #             New-Item -ItemType Directory -Path $wixDir -Force
+  #         }
+  #         Expand-Archive -Path $wixZip -DestinationPath $wixDir -Force
           
-          # 将 WiX 直接写入系统环境变量，对后续步骤生效
-          echo "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          echo "WIX=$wixDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "WiX successfully installed and added to ENV."
-        shell: pwsh
+  #         # 将 WiX 直接写入系统环境变量，对后续步骤生效
+  #         echo "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+  #         echo "WIX=$wixDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+  #         Write-Host "WiX successfully installed and added to ENV."
+  #       shell: pwsh
 
-      # 第一次尝试打包：如果失败，流程不中断，记录状态并走向下一步重试
-      - name: Build Desktop App (Windows) - First Try
-        id: build_one
-        run: |
-          ./gradlew :desktopApp:packageMsi --no-daemon
-        shell: bash
-        continue-on-error: true 
+  #     # 第一次尝试打包：如果失败，流程不中断，记录状态并走向下一步重试
+  #     - name: Build Desktop App (Windows) - First Try
+  #       id: build_one
+  #       run: |
+  #         ./gradlew :desktopApp:packageMsi --no-daemon
+  #       shell: bash
+  #       continue-on-error: true 
 
-      # 第二次尝试打包：仅在第一次失败时触发，执行 clean 后加大日志输出强度 (--info)
-      - name: Retry build with clean if failed
-        if: steps.build_one.outcome == 'failure'
-        run: |
-          Write-Host "=== First attempt failed. Cleaning and retrying with --info... ==="
-          ./gradlew :desktopApp:clean :desktopApp:packageMsi --no-daemon --info
-        shell: bash
+  #     # 第二次尝试打包：仅在第一次失败时触发，执行 clean 后加大日志输出强度 (--info)
+  #     - name: Retry build with clean if failed
+  #       if: steps.build_one.outcome == 'failure'
+  #       run: |
+  #         Write-Host "=== First attempt failed. Cleaning and retrying with --info... ==="
+  #         ./gradlew :desktopApp:clean :desktopApp:packageMsi --no-daemon --info
+  #       shell: bash
 
-      # 兜底日志打印：无论成功失败，只要发生过错误或者用于日常留存，打印 jpackage 日志
-      - name: Print jpackage error log on Failure
-        if: always()
-        run: |
-          Write-Host "=== Checking jpackage logs ==="
-          $logDir = "desktopApp/build/compose/logs/packageMsi"
-          if (Test-Path $logDir) {
-              Get-ChildItem -Path $logDir -Filter "*.txt" | ForEach-Object {
-                  Write-Host "=== File: $($_.Name) ==="
-                  Get-Content -Path $_.FullName -Tail 100
-                  Write-Host ""
-              }
-          } else {
-              Write-Host "No log files found in $logDir (Build might have passed or failed earlier)."
-          }
-        shell: pwsh
+  #     # 兜底日志打印：无论成功失败，只要发生过错误或者用于日常留存，打印 jpackage 日志
+  #     - name: Print jpackage error log on Failure
+  #       if: always()
+  #       run: |
+  #         Write-Host "=== Checking jpackage logs ==="
+  #         $logDir = "desktopApp/build/compose/logs/packageMsi"
+  #         if (Test-Path $logDir) {
+  #             Get-ChildItem -Path $logDir -Filter "*.txt" | ForEach-Object {
+  #                 Write-Host "=== File: $($_.Name) ==="
+  #                 Get-Content -Path $_.FullName -Tail 100
+  #                 Write-Host ""
+  #             }
+  #         } else {
+  #             Write-Host "No log files found in $logDir (Build might have passed or failed earlier)."
+  #         }
+  #       shell: pwsh
 
-      - name: Upload Desktop MSI Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-msi
-          path: desktopApp/build/compose/binaries/main/msi/*.msi
-          if-no-files-found: error # 改为 error，如果找不到文件尽早让 CI 报错，避免拖累后面的 Release
-          retention-days: 7
+  #     - name: Upload Desktop MSI Artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: desktop-msi
+  #         path: desktopApp/build/compose/binaries/main/msi/*.msi
+  #         if-no-files-found: error # 改为 error，如果找不到文件尽早让 CI 报错，避免拖累后面的 Release
+  #         retention-days: 7
 
   # ============================================================
   # Summary
@@ -253,7 +253,7 @@ jobs:
       - android-build
       - desktop-build-macos
       - desktop-build-linux
-      - desktop-build-windows
+      # - desktop-build-windows
     if: always()
     runs-on: ubuntu-latest
 
@@ -278,7 +278,7 @@ jobs:
       - android-build
       - desktop-build-macos
       - desktop-build-linux
-      - desktop-build-windows
+      # - desktop-build-windows
     if: github.event_name == 'workflow_dispatch' && !cancelled()
     runs-on: ubuntu-latest
     permissions:
@@ -303,11 +303,11 @@ jobs:
           name: desktop-deb
           path: release-assets
 
-      - name: Download Desktop MSI
-        uses: actions/download-artifact@v4
-        with:
-          name: desktop-msi
-          path: release-assets
+      # - name: Download Desktop MSI
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: desktop-msi
+      #     path: release-assets
 
       - name: List downloaded files
         run: |
@@ -335,7 +335,7 @@ jobs:
             - Android APK
             - Desktop DMG (macOS)
             - Desktop DEB (Linux)
-            - Desktop MSI (Windows)
+            # - Desktop MSI (Windows)
           files: release-assets/*
           draft: false
           prerelease: true
