@@ -30,38 +30,44 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      # 1. 用官方推荐的 winget 确保 Inno Setup 6 编译器绝对可用
+      # 1. 确保 Inno Setup 6 编译器绝对可用
       - name: Install Inno Setup
         run: |
           winget install JrSoftware.InnoSetup --silent --accept-source-agreements --accept-package-agreements
           echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
         shell: pwsh
 
-      # 2. 编译绿色版可执行文件目录（100% 成功，绝对不触发恶心的 WiX 311 漏洞）
+      # 2. 编译绿色版可执行文件目录
       - name: Build Desktop Distributable
         run: |
           ./gradlew :desktopApp:createDistributable --no-daemon --stacktrace
         shell: bash
 
-      # 3. 【核心加固】动态生成一个纯净的 Inno Setup 配置文件 (.iss)
-      # 告诉它：把我刚生成的整个绿色文件夹，暴力封装成一个单文件 Setup.exe！
+      # 3. 【精准追踪】全自动化地毯式搜索 CineWave.exe 所在的真实绿色版根目录
       - name: Generate Inno Setup Script
         shell: pwsh
         run: |
-          # 自动定位刚刚 Gradle 产出的绿色版根目录
-          $sourcePath = "desktopApp/build/compose/binaries/main/app"
-          if (-not (Test-Path $sourcePath)) {
+          Write-Host "Searching for CineWave.exe inside build directory..."
+          
+          # 地毯式扫描整个 binaries 目录，精准定位真实的 CineWave.exe 文件
+          $exeFile = Get-ChildItem -Path "desktopApp/build/compose/binaries" -Filter "CineWave.exe" -Recurse | Select-Object -First 1
+          
+          if (-not $exeFile) {
+              # 降级兜底：找任何可能生成的 .exe 启动器
               $exeFile = Get-ChildItem -Path "desktopApp/build/compose/binaries" -Filter "*.exe" -Recurse | Select-Object -First 1
-              if ($exeFile) { $sourcePath = $exeFile.DirectoryName }
+          }
+
+          if ($exeFile) {
+              # 获取这个 .exe 所在的真实父级目录，并转换为 Windows 绝对路径
+              $fullSourcePath = [System.IO.Path]::GetFullPath($exeFile.DirectoryName)
+              $realExeName = $exeFile.Name
+              Write-Host "🎯 成功抓取真实生产环境路径: $fullSourcePath"
+              Write-Host "🎯 成功抓取启动器文件名: $realExeName"
+          } else {
+              throw "❌ 严重错误: 无法在 Gradle 输出目录中找到任何生成的可执行文件！请确认 createDistributable 是否成功。"
           }
           
-          if (-not $sourcePath) { throw "Could not find built app directory!" }
-          
-          # 将绝对路径转换为 Windows 标准格式
-          $fullSourcePath = [System.IO.Path]::GetFullPath($sourcePath)
-          Write-Host "Target Source Path: $fullSourcePath"
-
-          # 动态写入一个完美的 ISS 配置文件
+          # 动态写入适配真实路径的 ISS 配置文件
           $issContent = @"
           [Setup]
           AppName=CineWave
@@ -80,27 +86,27 @@ jobs:
           Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
           [Files]
-          Source: "${fullSourcePath}\CineWave.exe"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "${fullSourcePath}\${realExeName}"; DestDir: "{app}"; Flags: ignoreversion
           Source: "${fullSourcePath}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
           [Icons]
-          Name: "{group}\CineWave"; Filename: "{app}\CineWave.exe"
-          Name: "{autodesktop}\CineWave"; Filename: "{app}\CineWave.exe"; Tasks: desktopicon
+          Name: "{group}\CineWave"; Filename: "{app}\${realExeName}"
+          Name: "{autodesktop}\CineWave"; Filename: "{app}\${realExeName}"; Tasks: desktopicon
 
           [Run]
-          Filename: "{app}\CineWave.exe"; Description: "{cm:LaunchProgram,CineWave}"; Flags: nowait postinstall skipifsilent
+          Filename: "{app}\${realExeName}"; Description: "{cm:LaunchProgram,CineWave}"; Flags: nowait postinstall skipifsilent
           "@
           
           [System.IO.File]::WriteAllText("setup.iss", $issContent, [System.Text.Encoding]::UTF8)
-          Write-Host "setup.iss generated successfully!"
+          Write-Host "setup.iss has been generated flawlessly."
 
-      # 4. 绕过 Gradle 插件，直接呼叫 Inno Setup 编译器 (iscc.exe) 编译出真正的安装包
+      # 4. 直接呼叫 Inno Setup 编译器一键封装
       - name: Compile Installer EXE
         run: |
           iscc.exe setup.iss
         shell: cmd
 
-      # 5. 上传这个用户梦寐以求的单文件独立安装包
+      # 5. 上传最终的标准单文件独立安装包
       - name: Upload Desktop EXE Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -109,7 +115,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # 6. 发布 GitHub Release，挂载这个单文件安装包
+      # 6. 发布 GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -119,7 +125,7 @@ jobs:
             ## CineWave Desktop App (Windows 标准安装版)
             
             - 说明: 这是一个标准的单文件 `.exe` 安装包。
-            - 使用方法: 下载 `CineWave_Setup.exe`，双击运行，根据向导一路点击“下一步”即可完成安装并创建桌面快捷方式。
+            - 使用方法: 下载 `CineWave_Setup.exe`，双击运行即可。
           files: CineWave_Setup.exe
           generate_release_notes: true
           make_latest: true
