@@ -46,14 +46,11 @@ jobs:
       # 错误捕获
       - name: Capture all build logs
         if: always()
-        run: |
-          echo "=== Checking jpackage logs directory ==="
-          if [ -d "desktopApp/build/compose/logs/packageExe" ]; then
-             ls -la desktopApp/build/compose/logs/packageExe/
-          else
-             echo "No specialized packageExe log directory found."
-          fi
         shell: bash
+        run: |
+          echo "=== 正在强行打印 jpackage 的真实错误日志 ==="
+          # 用通配符 * 强行打印该目录下所有的 err.txt，不需要管时间戳是多少
+          cat desktopApp/build/compose/logs/packageExe/*-err.txt
 
       # 产物上传
       - name: Upload Desktop EXE Artifact
