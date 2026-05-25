@@ -187,6 +187,13 @@ jobs:
           ./gradlew :desktopApp:packageMsi
         shell: bash
 
+      - name: Print jpackage error log
+        if: failure()
+        run: |
+          if (Test-Path "desktopApp/build/compose/logs/packageMsi/") {
+              Get-Content -Path "desktopApp/build/compose/logs/packageMsi/*.txt" -Tail 50
+          }
+
       - name: Upload Desktop MSI Artifact
         uses: actions/upload-artifact@v4
         with:
