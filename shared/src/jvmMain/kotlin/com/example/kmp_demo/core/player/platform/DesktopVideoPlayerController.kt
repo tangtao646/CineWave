@@ -167,6 +167,11 @@ class DesktopVideoPlayerController(
                 if (vlcMediaPlayer.status().isPlaying) {
                     _currentPosition.value = vlcMediaPlayer.status().time()
                     _duration.value = vlcMediaPlayer.status().length()
+                    // 如果当前状态是 BUFFERING 但实际已经在播放，恢复为 PLAYING
+                    // 解决 Seek 后 VLCJ 可能不触发 playing 事件导致 loading 一直显示的问题
+                    if (_playbackState.value == VideoPlaybackState.BUFFERING) {
+                        _playbackState.value = VideoPlaybackState.PLAYING
+                    }
                 }
                 delay(POSITION_POLL_INTERVAL_MS)
             }
