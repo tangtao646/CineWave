@@ -18,7 +18,6 @@ on:
 
 env:
   GRADLE_OPTS: "-Xmx4096M -Dorg.gradle.daemon=false"
-  GRADLE_CACHE_KEY: gradle-cache-${{ runner.os }}
 
 jobs:
   # ============================================================
