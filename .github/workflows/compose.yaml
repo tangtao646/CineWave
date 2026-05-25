@@ -1,145 +1,39 @@
-name: CineWave CI/CD
+name: CineWave CI/CD (All Platforms)
 
 on:
   workflow_dispatch:
-
-env:
-  GRADLE_OPTS: "-Xmx4096M -Dorg.gradle.daemon=false"
+    inputs:
+      build-macos:
+        description: 'Build macOS Desktop DMG'
+        type: boolean
+        default: true
+      build-windows:
+        description: 'Build Windows Desktop MSI'
+        type: boolean
+        default: false
+      build-android:
+        description: 'Build Android APK + AAB'
+        type: boolean
+        default: false
 
 jobs:
   # ============================================================
-  # Desktop Build (macOS)
+  # 一键调度器：通过 workflow_call 复用各平台独立的 workflow
   # ============================================================
-  desktop-build-macos:
-    name: Build Desktop App (macOS)
-    runs-on: macos-latest
-    
-    # 必须显式声明写权限，否则 softprops/action-gh-release 步骤会报 403 错误
-    permissions:
-      contents: write
+  macos:
+    name: macOS Desktop
+    if: ${{ inputs.build-macos }}
+    uses: ./.github/workflows/desktop-macos.yaml
+    secrets: inherit
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  windows:
+    name: Windows Desktop
+    if: ${{ inputs.build-windows }}
+    uses: ./.github/workflows/desktop-windows.yaml
+    secrets: inherit
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
-
-      - name: Install VLC (for Desktop video player)
-        run: brew install vlc
-
-      - name: Build Desktop App (macOS)
-        run: |
-          ./gradlew :desktopApp:packageDmg --no-daemon
-
-      - name: Mount DMG and run app to verify it starts
-        run: |
-          DMG_FILE=$(ls desktopApp/build/compose/binaries/main/dmg/*.dmg 2>/dev/null | head -1)
-          if [ -z "$DMG_FILE" ]; then
-            echo "❌ No DMG file found!"
-            exit 1
-          fi
-          echo "Found DMG: $DMG_FILE"
-          
-          # 创建一个结构确定、且绝对不含空格的独立挂载点，防止路径截断
-          CUSTOM_MOUNT="$HOME/dmg_mount"
-          mkdir -p "$CUSTOM_MOUNT"
-          
-          # 挂载 DMG 到指定目录
-          echo "=== Mounting DMG ==="
-          hdiutil attach "$DMG_FILE" -mountpoint "$CUSTOM_MOUNT" -nobrowse -quiet
-          
-          # 动态查找生成的 .app 文件夹
-          APP_PATH=$(find "$CUSTOM_MOUNT" -name "*.app" -maxdepth 2 | head -1)
-          echo "App path: $APP_PATH"
-          
-          if [ -z "$APP_PATH" ]; then
-            echo "❌ No .app bundle found inside the DMG"
-            hdiutil detach "$CUSTOM_MOUNT" -force -quiet 2>/dev/null || true
-            exit 1
-          fi
-
-          # 关键步：移除扩展属性，绕过 macOS Gatekeeper 门禁，防止弹窗阻断 CI 流程
-          echo "=== Bypassing Gatekeeper ==="
-          xattr -cr "$APP_PATH" || true
-          
-          # 定位到真正的 macOS 二进制可执行文件（避免依赖无显示器的 GUI open 命令）
-          EXEC_FILE=$(find "$APP_PATH/Contents/MacOS" -type f | head -1)
-          echo "Executable file: $EXEC_FILE"
-
-          if [ -n "$EXEC_FILE" ]; then
-            echo "=== Launching app binary in background ==="
-            # 在后台直接拉起进程，并将输出和错误重定向到日志文件
-            "$EXEC_FILE" > app_output.log 2>&1 &
-            APP_PID=$!
-            
-            echo "App launched with PID: $APP_PID. Waiting 8s for smoke test..."
-            sleep 8
-            
-            # 检测在非 GUI 状态下进程是否依然平稳存活
-            if kill -0 $APP_PID 2>/dev/null; then
-              echo "✅ App started successfully (process is alive)!"
-              echo "=== App log snippet (First 20 lines) ==="
-              head -n 20 app_output.log || true
-              
-              # 冒烟测试通过，优雅杀死测试进程
-              kill $APP_PID 2>/dev/null || true
-            else
-              echo "❌ App process died immediately on startup. Printing crash logs:"
-              echo "=== Application Stdout/Stderr ==="
-              cat app_output.log
-              
-              # 尝试捕获 macOS 系统级别的崩溃日志
-              CRASH_LOG=$(ls -t ~/Library/Logs/DiagnosticReports/*.crash 2>/dev/null | head -3)
-              if [ -n "$CRASH_LOG" ]; then
-                for log in $CRASH_LOG; do
-                  echo "--- $log ---"
-                  cat "$log"
-                done
-              fi
-              
-              hdiutil detach "$CUSTOM_MOUNT" -force -quiet 2>/dev/null || true
-              exit 1
-            fi
-          else
-            echo "❌ Executable binary not found in .app bundle structure"
-            hdiutil detach "$CUSTOM_MOUNT" -force -quiet 2>/dev/null || true
-            exit 1
-          fi
-          
-          # 卸载清理
-          echo "=== Detaching DMG ==="
-          sleep 2
-          hdiutil detach "$CUSTOM_MOUNT" -force -quiet 2>/dev/null || true
-          rm -rf "$CUSTOM_MOUNT"
-          echo "✅ DMG verification complete"
-
-      - name: Upload Desktop DMG Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-dmg
-          path: desktopApp/build/compose/binaries/main/dmg/*.dmg
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ github.run_number }}
-          name: "CineWave v${{ github.run_number }}"
-          body: |
-            ## CineWave Desktop App
-            
-            - 构建详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            - 代码提交: ${{ github.sha }}
-          files: desktopApp/build/compose/binaries/main/dmg/*.dmg
-          generate_release_notes: true
-          make_latest: true
+  android:
+    name: Android
+    if: ${{ inputs.build-android }}
+    uses: ./.github/workflows/android.yaml
+    secrets: inherit

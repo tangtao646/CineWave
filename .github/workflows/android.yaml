@@ -1,0 +1,71 @@
+name: Android Build
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  GRADLE_OPTS: "-Xmx4096M -Dorg.gradle.daemon=false"
+
+jobs:
+  android-build:
+    name: Build Android App (APK + AAB)
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+
+      - name: Build Android APK (Debug)
+        run: |
+          ./gradlew :androidApp:assembleDebug --no-daemon
+
+      - name: Build Android AAB (Release)
+        run: |
+          ./gradlew :androidApp:bundleRelease --no-daemon
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-debug
+          path: androidApp/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aab-release
+          path: androidApp/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: "CineWave v${{ github.run_number }}"
+          body: |
+            ## CineWave Android App
+            
+            - 构建详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - 代码提交: ${{ github.sha }}
+          files: |
+            androidApp/build/outputs/apk/debug/*.apk
+            androidApp/build/outputs/bundle/release/*.aab
+          generate_release_notes: true
+          make_latest: true
