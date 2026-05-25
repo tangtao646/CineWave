@@ -242,6 +242,9 @@ jobs:
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          path: ./release-assets
+          merge-multiple: true
 
       - name: Generate release tag
         id: tag
@@ -273,3 +276,7 @@ jobs:
             desktop-msi/*.msi
           draft: false
           prerelease: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
