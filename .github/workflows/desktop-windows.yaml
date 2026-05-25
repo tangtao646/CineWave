@@ -34,8 +34,32 @@ jobs:
         run: |
           ./gradlew :desktopApp:packageMsi --no-daemon
         shell: bash
+        continue-on-error: true
+
+      - name: Capture jpackage error logs
+        if: always()
+        shell: bash
+        run: |
+          echo "=== jpackage stdout logs ==="
+          ls -la desktopApp/build/compose/logs/packageMsi/ 2>/dev/null || echo "No log dir"
+          for f in desktopApp/build/compose/logs/packageMsi/*-out.txt; do
+            if [ -f "$f" ]; then
+              echo "--- $f ---"
+              cat "$f"
+            fi
+          done
+          echo "=== jpackage stderr logs ==="
+          for f in desktopApp/build/compose/logs/packageMsi/*-err.txt; do
+            if [ -f "$f" ]; then
+              echo "--- $f ---"
+              cat "$f"
+            fi
+          done
+          echo "=== jpackage args ==="
+          cat desktopApp/build/compose/tmp/packageMsi.args.txt 2>/dev/null || echo "No args file"
 
       - name: Upload Desktop MSI Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: desktop-msi
