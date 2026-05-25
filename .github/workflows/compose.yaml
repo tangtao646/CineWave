@@ -236,20 +236,38 @@ jobs:
       contents: write
 
     steps:
-      - name: Download all artifacts
+      - name: Download Android APK
         uses: actions/download-artifact@v4
         with:
-          path: ./release-assets
-          merge-multiple: true
+          name: android-apk-${{ github.event.inputs.build_type || 'debug' }}
+          path: release-assets
+
+      - name: Download Desktop DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-dmg
+          path: release-assets
+
+      - name: Download Desktop DEB
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-deb
+          path: release-assets
+
+      - name: Download Desktop MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-msi
+          path: release-assets
+
+      - name: List downloaded files
+        run: |
+          ls -la release-assets/
 
       - name: Generate release tag
         id: tag
         run: |
           echo "release_tag=v$(date +'%Y%m%d.%H%M%S')" >> $GITHUB_OUTPUT
-
-      - name: List downloaded files
-        run: |
-          find ./release-assets -type f -ls
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -269,7 +287,7 @@ jobs:
             - Desktop DMG (macOS)
             - Desktop DEB (Linux)
             - Desktop MSI (Windows)
-          files: ./release-assets/*
+          files: release-assets/*
           draft: false
           prerelease: true
           fail_on_unmatched_files: true
