@@ -32,10 +32,28 @@ jobs:
 
       - name: Build Desktop App (Windows EXE)
         run: |
-          ./gradlew :desktopApp:packageExe --no-daemon
+          ./gradlew :desktopApp:packageExe --no-daemon --stacktrace 2>&1
         shell: bash
+        continue-on-error: true
+
+      - name: Capture jpackage error logs
+        if: always()
+        shell: bash
+        run: |
+          echo "=== jpackage stdout ==="
+          cat desktopApp/build/compose/logs/packageExe/jpackage-*-out.txt 2>/dev/null || echo "No stdout log"
+          echo ""
+          echo "=== jpackage stderr ==="
+          cat desktopApp/build/compose/logs/packageExe/jpackage-*-err.txt 2>/dev/null || echo "No stderr log"
+          echo ""
+          echo "=== jpackage args ==="
+          cat desktopApp/build/compose/tmp/packageExe.args.txt 2>/dev/null || echo "No args file"
+          echo ""
+          echo "=== Build output dirs ==="
+          find desktopApp/build/compose/binaries -type d 2>/dev/null | head -20
 
       - name: Upload Desktop EXE Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: desktop-exe
