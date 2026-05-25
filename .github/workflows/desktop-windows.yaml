@@ -30,34 +30,41 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      # 【修正 1】去掉了 continue-on-error: true，让失败暴露在最合理的步骤
+      # 【核心新增】帮 Windows 补全 jpackage 依赖的打包链环境变量
+      - name: Add Inno Setup and WiX to PATH
+        run: |
+          # 强行将 Windows 镜像中预装的 Inno Setup 路径注入到 GitHub Actions 的全局 PATH 中
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $GITHUB_PATH
+          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $GITHUB_PATH
+        shell: bash
+
+      # 正常执行打包，去掉了 continue-on-error 保持流水线严谨
       - name: Build Desktop App (Windows EXE)
         run: |
           ./gradlew :desktopApp:packageExe --no-daemon --stacktrace 2>&1
         shell: bash
 
-      # 【修正 2】这个步骤会在上方成功或失败时都执行 (always)。它会帮你把藏在深处的错误日志捞出来打印
+      # 无论成功失败，依然为你兜底扫描和打印具体的错误详情
       - name: Capture all build logs
         if: always()
         shell: bash
         run: |
-          echo "=== All .txt and .log files ==="
-          find desktopApp/build -name "*.txt" -o -name "*.log" 2>/dev/null | head -20
-          echo ""
+          echo "=== Checking jpackage logs directory ==="
+          if [ -d "desktopApp/build/compose/logs/packageExe" ]; then
+             ls -la desktopApp/build/compose/logs/packageExe/
           
-          echo "=== Printing specialized jpackage error log ==="
-          # 自动寻找以 -err.txt 结尾的 jpackage 崩溃日志
-          JPACKAGE_ERR=$(find desktopApp/build/compose/logs -name "jpackage*-err.txt" 2>/dev/null | head -1)
-          if [ -n "$JPACKAGE_ERR" ]; then
-             echo "Found target log: $JPACKAGE_ERR"
-             echo "------------------ START OF LOG ------------------"
-             cat "$JPACKAGE_ERR"
-             echo "------------------- END OF LOG -------------------"
+             # 如果生成了特定的 err.txt，直接当场打印
+             JPACKAGE_ERR=$(find desktopApp/build/compose/logs/packageExe -name "jpackage*-err.txt" 2>/dev/null | head -1)
+             if [ -n "$JPACKAGE_ERR" ]; then
+                echo "------------------ START OF JPACKAGE ERROR ------------------"
+                cat "$JPACKAGE_ERR"
+                echo "------------------- END OF JPACKAGE ERROR -------------------"
+             fi
           else
-             echo "No jpackage error log (*-err.txt) was generated. The failure might be standard Gradle compilation error."
+             echo "No specialized packageExe log directory found."
           fi
 
-      # 【修正 3】只有在完全成功（确实生成了exe）时才上传
+      # 只有完全打包成功时才执行上传产物
       - name: Upload Desktop EXE Artifact
         if: success()
         uses: actions/upload-artifact@v4
@@ -67,7 +74,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # 【修正 4】只有在完全成功时才发 release，拒绝空壳 Release
+      # 只有完全成功时才发版，拒绝空壳 Release
       - name: Create GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
