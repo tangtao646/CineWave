@@ -30,52 +30,61 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      # 1. 【降维打击】只编译全独立胖 Jar，完全绕开 packageExe 的 WiX 地雷
-      - name: Build Desktop UberJar
+      # 1. 【终极降维打击】只生成绿色版可执行文件目录，不走 WiX 安装包，没有任何环境和网络依赖
+      - name: Build Desktop Distributable
         run: |
-          ./gradlew :desktopApp:packageUberJar --no-daemon --stacktrace
+          ./gradlew :desktopApp:createDistributable --no-daemon --stacktrace
         shell: bash
 
-      # 2. 用快捷轻量工具把 JAR 直接套壳成真正的 Windows EXE，不需要任何恶心的安装包环境
-      - name: Convert JAR to EXE
+      # 2. 用 Windows 自带的 PowerShell 将绿色的程序文件夹直接压缩为标准的 .zip 包
+      - name: Compress Directory to Zip
         shell: pwsh
         run: |
-          # 下载轻量级开源 Jar 转 Exe 工具
-          Invoke-WebRequest -Uri "https://github.com/vtotiger/jexe/releases/download/v1.0.0/jexe.exe" -OutFile "jexe.exe"
+          # 定义可能存在的两条官方输出路径（兼容不同老旧版本的 Compose 插件）
+          $path1 = "desktopApp/build/compose/binaries/main/app"
+          $path2 = "desktopApp/build/compose/binaries/main/suggested-name"
           
-          # 寻找编译出来的 jar 包路径
-          $jarFile = Get-ChildItem -Path "desktopApp/build/compose/jars/" -Filter "*.jar" | Select-Object -First 1
-          
-          if ($jarFile) {
-              echo "Found JAR: $($jarFile.FullName)"
-              # 直接融合成单文件绿色版 EXE
-              ./jexe.exe -jar $jarFile.FullName -output "CineWave.exe"
-              echo "Successfully generated CineWave.exe"
+          if (Test-Path $path1) {
+              $sourcePath = $path1
+          } elseif (Test-Path $path2) {
+              $sourcePath = $path2
           } else {
-              throw "Could not find built JAR file!"
+              # 兜底：自动寻找目录下含有 .exe 文件的那个应用根目录
+              $exeFile = Get-ChildItem -Path "desktopApp/build/compose/binaries" -Filter "*.exe" -Recurse | Select-Object -First 1
+              if ($exeFile) { $sourcePath = $exeFile.DirectoryName }
           }
 
-      # 3. 上传这纯净的、没有 WiX 污染的单文件 EXE
-      - name: Upload Desktop EXE Artifact
+          if ($sourcePath) {
+              Write-Host "Found production directory at: $sourcePath"
+              # 压缩为标准的绿色版压缩包
+              Compress-Archive -Path "$sourcePath\*" -DestinationPath "CineWave-Windows-Portable.zip" -Force
+              Write-Host "Successfully generated CineWave-Windows-Portable.zip"
+          } else {
+              throw "Could not find built app directory! Please check Gradle task outputs."
+          }
+
+      # 3. 上传这份完全由官方安全生成的绿色版 Zip
+      - name: Upload Desktop Zip Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-exe
-          path: CineWave.exe
+          name: desktop-windows-zip
+          path: CineWave-Windows-Portable.zip
           if-no-files-found: error
           retention-days: 7
 
-      # 4. 发布 GitHub Release
+      # 4. 自动发布 GitHub Release 挂载 Zip
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: "CineWave v${{ github.run_number }}"
           body: |
-            ## CineWave Desktop App (Windows 绿色版)
+            ## CineWave Desktop App (Windows 绿色免安装版)
             
-            - 说明: 无需安装，下载后双击即可直接运行！
+            - 说明: 微软打包工具链存在多语言已知漏洞。为保证稳定性，此版本采用标准的 Portable 绿色版。
+            - 使用方法: 下载后解压 `.zip` 压缩包，双击里面的 `CineWave.exe` 即可直接运行。
             - 构建详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          files: CineWave.exe
+          files: CineWave-Windows-Portable.zip
           generate_release_notes: true
           make_latest: true
         env:
