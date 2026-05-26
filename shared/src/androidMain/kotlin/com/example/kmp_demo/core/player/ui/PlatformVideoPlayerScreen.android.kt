@@ -44,6 +44,10 @@ import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 import com.example.kmp_demo.core.player.platform.ExoPlayerController
 import com.example.kmp_demo.core.player.platform.getDefaultCacheDir
 import com.example.kmp_demo.core.network.createHttpClient
+import io.github.kdroidfilter.composemediaplayer.VideoPlayerState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
 /**
@@ -87,8 +91,16 @@ fun AndroidVideoPlayerScreen(
     val resolvedCacheDir = "${getDefaultCacheDir(context)}/video_cache"
     val diskCache = remember { DiskLruCache(resolvedCacheDir) }
     val httpClient = remember { createHttpClient() }
+
+    // ========== 分享链接解析器 ==========
+    val shareUrlResolver = remember(httpClient) { ShareUrlResolver(httpClient) }
+
     val interceptor = remember {
-        M3u8CacheInterceptor(httpClient, diskCache, resolvedCacheDir)
+        M3u8CacheInterceptor(
+            httpClient = httpClient,
+            diskCache = diskCache,
+            cacheDir = resolvedCacheDir
+        )
     }
 
     // ========== 播放器控制器（注入 HybridDataSource） ==========
@@ -101,16 +113,10 @@ fun AndroidVideoPlayerScreen(
     // S11: 收集缓存进度（可选 UI 展示）
     val cacheProgress by interceptor.cacheProgress.collectAsState()
 
-    // ========== 分享链接解析器 ==========
-    val shareUrlResolver = remember(httpClient) { ShareUrlResolver(httpClient) }
-
     // ========== 打开视频 ==========
     LaunchedEffect(url, headers) {
-        interceptor.reset()
-        // 先解析分享链接（如果是），获取实际的视频流地址
         val resolvedUrl = shareUrlResolver.resolve(url, headers)
-        val actualUrl = interceptor.intercept(resolvedUrl, headers)
-        manager.open(actualUrl, headers)
+        manager.open(resolvedUrl, headers)
     }
 
     // ========== 全屏处理 ==========
@@ -300,6 +306,42 @@ fun AndroidVideoPlayerScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+internal fun handlePlayerAction(
+    manager: VideoPlayerManager,
+    action: PlayerAction,
+    diskCache: DiskLruCache? = null,
+    playerState: VideoPlayerState? = null,
+    coroutineScope: CoroutineScope? = null,
+) {
+    when (action) {
+        PlayerAction.TogglePlayPause -> manager.togglePlayPause()
+        is PlayerAction.SeekForward -> manager.seekForward(action.seconds)
+        is PlayerAction.SeekBackward -> manager.seekBackward(action.seconds)
+        is PlayerAction.SeekToFraction -> {
+            val targetMs = (action.fraction * (manager.uiState.value.duration)).toLong()
+            manager.seekTo(targetMs)
+        }
+        is PlayerAction.SeekToMs -> manager.seekTo(action.positionMs)
+        PlayerAction.ToggleFullScreen -> manager.toggleFullScreen()
+        PlayerAction.TogglePip -> {
+            playerState?.let { state ->
+                if (state.isPipSupported) {
+                    val scope = coroutineScope ?: GlobalScope
+                    scope.launch {
+                        state.enterPip()
+                    }
+                }
+            }
+        }
+        PlayerAction.ToggleControls -> manager.toggleControls()
+        PlayerAction.ClearCache -> {
+            GlobalScope.launch(Dispatchers.IO) {
+                diskCache?.clear()
             }
         }
     }
