@@ -33,6 +33,8 @@ compose.desktop {
             packageName = "CineWave"
             packageVersion = "1.0.0"
 
+            modules("jdk.unsupported")
+
             description = "CineWave - 跨平台影音播放应用"
             vendor = "CineWave"
 
