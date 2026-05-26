@@ -9,29 +9,32 @@ import kotlinx.coroutines.flow.asStateFlow
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
+import uk.co.caprica.vlcj.player.component.EmbeddedMediaPlayerComponent
 import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer
-import uk.co.caprica.vlcj.player.embedded.videosurface.VideoSurfaceAdapters
-import uk.co.caprica.vlcj.player.embedded.videosurface.ComponentVideoSurface
 import java.awt.Canvas
+import javax.swing.JPanel
 
 /**
  * Desktop 视频播放器 — 基于 VLCJ (libvlc) 的 AWT Canvas 原生视频输出。
  *
- * 使用 [MediaPlayerFactory] + [EmbeddedMediaPlayer] 手动管理 VLCJ 播放器，
- * 通过 [VideoSurfaceAdapters] 获取平台适配器，将视频渲染到 AWT [Canvas] 上。
+ * 使用 [MediaPlayerFactory] + [EmbeddedMediaPlayerComponent] 管理 VLCJ 播放器，
+ * 通过 [EmbeddedMediaPlayerComponent] 内部自动处理平台差异（macOS/Linux/Windows）。
  *
  * ## 架构优势（对比 CallbackVideoSurface）
  * - **不依赖 `sun.misc.Unsafe`**：AWT 视频输出使用 VLC 原生渲染管道，
  *   不需要 CallbackVideoSurface 的帧回调，彻底避免 JDK 17+ 上的 Unsafe 问题
  * - **硬件加速**：VLC 内部使用 OpenGL/VideoToolbox/DirectX 等硬件加速
- * - **macOS 兼容**：使用 caopengllayer 原生视频输出层
+ * - **跨平台兼容**：EmbeddedMediaPlayerComponent 内部自动处理平台差异
+ *   - macOS: 使用 Window 作为视频表面（macOS 不支持 AWT Canvas 直接渲染）
+ *   - Linux: 使用 X11 Window ID
+ *   - Windows: 使用 HWND
  * - **性能更好**：无需每帧从 ByteBuffer → BufferedImage → ImageBitmap 转换
  *
  * ## 渲染流程
  * ```
- * VLCJ EmbeddedMediaPlayer
- *     → VideoSurfaceAdapter.attach(mediaPlayer, canvasPeer)
- *     → AWT Canvas（硬件加速）
+ * VLCJ EmbeddedMediaPlayerComponent (JPanel)
+ *     → 内部 ComponentVideoSurface
+ *     → VLC 原生渲染管道（硬件加速）
  *     → SwingPanel → Compose Desktop 布局
  * ```
  *
@@ -42,8 +45,8 @@ import java.awt.Canvas
  *   - Windows: 从 https://www.videolan.org/vlc/ 下载安装
  *
  * @see IPlayerController
+ * @see EmbeddedMediaPlayerComponent
  * @see EmbeddedMediaPlayer
- * @see VideoSurfaceAdapters
  */
 class DesktopVideoPlayerController(
     private val mediaPlayerFactory: MediaPlayerFactory
@@ -55,23 +58,29 @@ class DesktopVideoPlayerController(
 
     // ==================== VLCJ 核心组件 ====================
 
-    /** VLCJ 嵌入式媒体播放器 */
-    val mediaPlayer: EmbeddedMediaPlayer = mediaPlayerFactory.mediaPlayers().newEmbeddedMediaPlayer()
+    /**
+     * EmbeddedMediaPlayerComponent 封装了 MediaPlayerFactory、EmbeddedMediaPlayer
+     * 和视频表面组件，内部自动处理平台差异。
+     *
+     * - macOS: 使用 Window 作为视频表面
+     * - Linux: 使用 X11 Window ID
+     * - Windows: 使用 HWND
+     */
+    val mediaPlayerComponent: EmbeddedMediaPlayerComponent = EmbeddedMediaPlayerComponent(
+        mediaPlayerFactory,
+        null,  // videoSurfaceComponent - null 表示使用默认 Canvas
+        null,  // fullScreenStrategy - null 表示不使用全屏策略
+        null,  // inputEvents - null 表示使用默认输入事件处理
+        null   // overlayWindow - null 表示不使用覆盖窗口
+    )
 
-    /** AWT Canvas 用于视频输出，通过 SwingPanel 嵌入 Compose 布局 */
-    val videoCanvas: Canvas = Canvas().apply {
-        background = java.awt.Color.BLACK
-        isFocusable = true
-    }
+    /** VLCJ 嵌入式媒体播放器 */
+    val mediaPlayer: EmbeddedMediaPlayer = mediaPlayerComponent.mediaPlayer()
+
+    /** 视频表面组件（JPanel），通过 SwingPanel 嵌入 Compose 布局 */
+    val videoSurfaceComponent: JPanel = mediaPlayerComponent
 
     init {
-        // 创建组件视频表面并绑定到 Canvas
-        // 使用 ComponentVideoSurface 将视频渲染到 AWT Canvas 上
-        // 注意：此时 Canvas 还没有被添加到 AWT 组件树中，
-        // libvlc 会在 Canvas 被添加到窗口后自动找到有效的视频输出
-        val videoSurface = mediaPlayerFactory.videoSurfaces().newVideoSurface(videoCanvas)
-        mediaPlayer.videoSurface().set(videoSurface)
-
         // 注册 VLCJ 事件监听器
         mediaPlayer.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
             override fun playing(mediaPlayer: MediaPlayer) {
@@ -227,7 +236,7 @@ class DesktopVideoPlayerController(
             }
 
             try {
-                mediaPlayer.release()
+                mediaPlayerComponent.release()
             } catch (_: Exception) {}
 
             try {

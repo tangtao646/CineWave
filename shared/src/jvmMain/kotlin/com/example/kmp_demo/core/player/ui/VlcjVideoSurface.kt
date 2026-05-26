@@ -8,26 +8,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
-import java.awt.Canvas
 import java.awt.Dimension
+import javax.swing.JPanel
 
 /**
- * VLCJ 视频渲染表面 — 基于 AWT Canvas 的原生视频输出。
+ * VLCJ 视频渲染表面 — 基于 EmbeddedMediaPlayerComponent 的原生视频输出。
  *
- * 使用 [DesktopVideoPlayerController.videoCanvas]（[Canvas]）作为视频渲染容器，
+ * 使用 [DesktopVideoPlayerController.videoSurfaceComponent]（[JPanel]）作为视频渲染容器，
  * 通过 Compose 的 [SwingPanel] 嵌入到 Compose Desktop 布局中。
  *
  * ## 架构优势
  * - **不依赖 `sun.misc.Unsafe`**：使用 VLC 原生 AWT 视频输出管道
  * - **硬件加速**：VLC 内部使用 OpenGL/VideoToolbox/DirectX
- * - **macOS 兼容**：使用 caopengllayer 原生视频输出层
+ * - **跨平台兼容**：EmbeddedMediaPlayerComponent 内部自动处理平台差异
  * - **性能更好**：无需帧数据拷贝和转换
  *
  * ## 渲染流程
  * ```
- * VLCJ EmbeddedMediaPlayer
- *     → VideoSurfaceAdapter.attach(mediaPlayer, canvasPeer)
- *     → AWT Canvas（硬件加速）
+ * VLCJ EmbeddedMediaPlayerComponent (JPanel)
+ *     → 内部 ComponentVideoSurface
+ *     → VLC 原生渲染管道（硬件加速）
  *     → SwingPanel → Compose Desktop 布局
  * ```
  *
@@ -39,7 +39,7 @@ fun VlcjVideoSurface(
     controller: DesktopVideoPlayerController,
     modifier: Modifier = Modifier,
 ) {
-    val canvas = remember { controller.videoCanvas }
+    val videoSurfaceComponent = remember { controller.videoSurfaceComponent }
 
     // 组件卸载时释放视频表面
     DisposableEffect(controller) {
@@ -52,7 +52,7 @@ fun VlcjVideoSurface(
         SwingPanel(
             modifier = Modifier.fillMaxSize(),
             factory = {
-                canvas.apply {
+                videoSurfaceComponent.apply {
                     // 设置最小尺寸
                     minimumSize = Dimension(1, 1)
                     preferredSize = Dimension(1, 1)
