@@ -10,28 +10,30 @@ import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer
-import uk.co.caprica.vlcj.player.embedded.videosurface.CallbackVideoSurface
-import uk.co.caprica.vlcj.player.embedded.videosurface.VideoSurfaceAdapter
 import uk.co.caprica.vlcj.player.embedded.videosurface.VideoSurfaceAdapters
-import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormat
-import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCallback
-import uk.co.caprica.vlcj.player.embedded.videosurface.callback.format.RV32BufferFormat
-import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallback
-import java.awt.image.BufferedImage
-import java.nio.ByteBuffer
+import uk.co.caprica.vlcj.player.embedded.videosurface.ComponentVideoSurface
+import java.awt.Canvas
 
 /**
- * Desktop 视频播放器 — 基于 VLCJ (libvlc) 的 CallbackVideoSurface 模式。
+ * Desktop 视频播放器 — 基于 VLCJ (libvlc) 的 AWT Canvas 原生视频输出。
  *
- * 使用 VLCJ 的 [CallbackVideoSurface] 获取视频帧的 RGBA 数据，
- * 通过 Compose 的 Canvas 手动渲染，避免 macOS 上 AWT/Swing 的
- * `caopengllayer` 视频输出兼容性问题。
+ * 使用 [MediaPlayerFactory] + [EmbeddedMediaPlayer] 手动管理 VLCJ 播放器，
+ * 通过 [VideoSurfaceAdapters] 获取平台适配器，将视频渲染到 AWT [Canvas] 上。
  *
- * ## 架构说明
- * - 视频渲染：VLCJ 回调返回 RGBA ByteBuffer → Compose Canvas 绘制
- * - 播放控制：通过 [IPlayerController] 接口与 commonMain 解耦
- * - 状态同步：VLCJ 的 [MediaPlayerEventAdapter] 监听 + 协程轮询位置
- * - 生命周期：DisposableEffect 管理资源创建与释放
+ * ## 架构优势（对比 CallbackVideoSurface）
+ * - **不依赖 `sun.misc.Unsafe`**：AWT 视频输出使用 VLC 原生渲染管道，
+ *   不需要 CallbackVideoSurface 的帧回调，彻底避免 JDK 17+ 上的 Unsafe 问题
+ * - **硬件加速**：VLC 内部使用 OpenGL/VideoToolbox/DirectX 等硬件加速
+ * - **macOS 兼容**：使用 caopengllayer 原生视频输出层
+ * - **性能更好**：无需每帧从 ByteBuffer → BufferedImage → ImageBitmap 转换
+ *
+ * ## 渲染流程
+ * ```
+ * VLCJ EmbeddedMediaPlayer
+ *     → VideoSurfaceAdapter.attach(mediaPlayer, canvasPeer)
+ *     → AWT Canvas（硬件加速）
+ *     → SwingPanel → Compose Desktop 布局
+ * ```
  *
  * ## 前置条件
  * - 需要用户安装 VLC 播放器
@@ -40,7 +42,8 @@ import java.nio.ByteBuffer
  *   - Windows: 从 https://www.videolan.org/vlc/ 下载安装
  *
  * @see IPlayerController
- * @see CallbackVideoSurface
+ * @see EmbeddedMediaPlayer
+ * @see VideoSurfaceAdapters
  */
 class DesktopVideoPlayerController(
     private val mediaPlayerFactory: MediaPlayerFactory
@@ -55,66 +58,19 @@ class DesktopVideoPlayerController(
     /** VLCJ 嵌入式媒体播放器 */
     val mediaPlayer: EmbeddedMediaPlayer = mediaPlayerFactory.mediaPlayers().newEmbeddedMediaPlayer()
 
-    /** 最新的视频帧 RGBA 数据 */
-    @Volatile
-    var latestVideoFrame: BufferedImage? = null
-        internal set
-
-    /** 视频帧宽度 */
-    @Volatile
-    var videoWidth: Int = 0
-        private set
-
-    /** 视频帧高度 */
-    @Volatile
-    var videoHeight: Int = 0
-        private set
-
-    // ==================== 状态管理 ====================
-
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private var positionPollingJob: Job? = null
-
-    private val _playbackState = MutableStateFlow(VideoPlaybackState.IDLE)
-    override val playbackState: StateFlow<VideoPlaybackState> = _playbackState.asStateFlow()
-
-    private val _currentPosition = MutableStateFlow(0L)
-    override val currentPosition: StateFlow<Long> = _currentPosition.asStateFlow()
-
-    private val _duration = MutableStateFlow(0L)
-    override val duration: StateFlow<Long> = _duration.asStateFlow()
-
-    private val _volume = MutableStateFlow(1.0f)
-    override val volume: StateFlow<Float> = _volume.asStateFlow()
-
-    private val _isFullScreen = MutableStateFlow(false)
-    override val isFullScreen: StateFlow<Boolean> = _isFullScreen.asStateFlow()
-
-    private val _bufferedPercent = MutableStateFlow(0)
-    override val bufferedPercent: StateFlow<Int> = _bufferedPercent.asStateFlow()
+    /** AWT Canvas 用于视频输出，通过 SwingPanel 嵌入 Compose 布局 */
+    val videoCanvas: Canvas = Canvas().apply {
+        background = java.awt.Color.BLACK
+        isFocusable = true
+    }
 
     init {
-        // 使用 CallbackVideoSurface 获取视频帧 RGBA 数据
-        // 避免 macOS 上 AWT Canvas 的 caopengllayer 兼容性问题
-        val surfaceAdapter: VideoSurfaceAdapter = VideoSurfaceAdapters.getVideoSurfaceAdapter()
-        val bufferFormatCallback = object : BufferFormatCallback {
-            override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat {
-                videoWidth = sourceWidth
-                videoHeight = sourceHeight
-                return RV32BufferFormat(sourceWidth, sourceHeight)
-            }
-
-            override fun allocatedBuffers(buffers: Array<ByteBuffer>) {
-                // 不需要额外处理
-            }
-        }
-        val callbackVideoSurface = CallbackVideoSurface(
-            bufferFormatCallback,
-            RenderCallbackImpl(this),
-            true,
-            surfaceAdapter
-        )
-        mediaPlayer.videoSurface().set(callbackVideoSurface)
+        // 创建组件视频表面并绑定到 Canvas
+        // 使用 ComponentVideoSurface 将视频渲染到 AWT Canvas 上
+        // 注意：此时 Canvas 还没有被添加到 AWT 组件树中，
+        // libvlc 会在 Canvas 被添加到窗口后自动找到有效的视频输出
+        val videoSurface = mediaPlayerFactory.videoSurfaces().newVideoSurface(videoCanvas)
+        mediaPlayer.videoSurface().set(videoSurface)
 
         // 注册 VLCJ 事件监听器
         mediaPlayer.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
@@ -157,6 +113,29 @@ class DesktopVideoPlayerController(
         })
     }
 
+    // ==================== 状态管理 ====================
+
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private var positionPollingJob: Job? = null
+
+    private val _playbackState = MutableStateFlow(VideoPlaybackState.IDLE)
+    override val playbackState: StateFlow<VideoPlaybackState> = _playbackState.asStateFlow()
+
+    private val _currentPosition = MutableStateFlow(0L)
+    override val currentPosition: StateFlow<Long> = _currentPosition.asStateFlow()
+
+    private val _duration = MutableStateFlow(0L)
+    override val duration: StateFlow<Long> = _duration.asStateFlow()
+
+    private val _volume = MutableStateFlow(1.0f)
+    override val volume: StateFlow<Float> = _volume.asStateFlow()
+
+    private val _isFullScreen = MutableStateFlow(false)
+    override val isFullScreen: StateFlow<Boolean> = _isFullScreen.asStateFlow()
+
+    private val _bufferedPercent = MutableStateFlow(0)
+    override val bufferedPercent: StateFlow<Int> = _bufferedPercent.asStateFlow()
+
     // ==================== 位置轮询 ====================
 
     private fun startPositionPolling() {
@@ -167,8 +146,6 @@ class DesktopVideoPlayerController(
                 if (vlcMediaPlayer.status().isPlaying) {
                     _currentPosition.value = vlcMediaPlayer.status().time()
                     _duration.value = vlcMediaPlayer.status().length()
-                    // 如果当前状态是 BUFFERING 但实际已经在播放，恢复为 PLAYING
-                    // 解决 Seek 后 VLCJ 可能不触发 playing 事件导致 loading 一直显示的问题
                     if (_playbackState.value == VideoPlaybackState.BUFFERING) {
                         _playbackState.value = VideoPlaybackState.PLAYING
                     }
@@ -188,7 +165,6 @@ class DesktopVideoPlayerController(
     override suspend fun open(url: String, headers: Map<String, String>?) {
         _playbackState.value = VideoPlaybackState.BUFFERING
         _currentPosition.value = 0L
-        latestVideoFrame = null
         mediaPlayer.media().play(url)
     }
 
@@ -235,92 +211,37 @@ class DesktopVideoPlayerController(
     override fun release() {
         stopPositionPolling()
         scope.cancel()
-        
-        // 抓取当前实例，避免多线程竞争
-        val player = mediaPlayer
-        
-        // 在后台线程释放 VLC 资源，避免 AWT 事件线程上的 pthread_mutex_lock 竞争
+
+        // 安全释放 VLCJ 资源
         Thread {
             try {
-                // 1. 停止视频表面回调，避免继续渲染
-                player.videoSurface().set(null)
-                
-                // 2. 显式清除音效器。某些版本的 libvlc 在 release 时自动清理音效器会触发 SIGSEGV
-                try { player.audio().setEqualizer(null) } catch (_: Exception) {}
-                
-                // 3. 先停止播放，让 VLC 内部事件处理线程完成清理
-                if (player.status().isPlaying) {
-                    player.controls().stop()
+                if (mediaPlayer.status().isPlaying) {
+                    mediaPlayer.controls().stop()
                 }
-            } catch (_: Exception) {
-                // 忽略异常
-            }
-            
-            // 4. 短暂等待 VLC 内部状态机切换完成
+            } catch (_: Exception) {}
+
             try {
                 Thread.sleep(100)
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
             }
-            
+
             try {
-                // 5. 释放媒体播放器实例
-                player.release()
-            } catch (_: Exception) {
-                // 忽略释放时的异常
-            }
-            
-            // 注意：mediaPlayerFactory 不在这里释放，它作为 Koin 单例由应用生命周期管理
-            
-            latestVideoFrame = null
+                mediaPlayer.release()
+            } catch (_: Exception) {}
+
+            try {
+                mediaPlayerFactory.release()
+            } catch (_: Exception) {}
         }.apply {
             isDaemon = true
             name = "vlc-release-thread"
             start()
-            // 等待释放完成，最多 2 秒，防止资源泄漏或后续冲突
             try {
                 join(2000)
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
             }
-        }
-    }
-}
-
-/**
- * VLCJ RenderCallback 实现 — 将视频帧从 ByteBuffer 转换为 BufferedImage。
- *
- * 作为独立类避免 lambda 类型推断问题。
- */
-private class RenderCallbackImpl(
-    private val controller: DesktopVideoPlayerController
-) : RenderCallback {
-
-    override fun display(mediaPlayer: MediaPlayer, nativeBuffers: Array<ByteBuffer>, bufferFormat: BufferFormat) {
-        try {
-            val width = bufferFormat.width
-            val height = bufferFormat.height
-            if (width <= 0 || height <= 0) return
-
-            val nativeBuffer = nativeBuffers.firstOrNull() ?: return
-
-            val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
-            val pixels = IntArray(width * height)
-
-            nativeBuffer.rewind()
-            for (i in pixels.indices) {
-                // RV32 在 little-endian 系统（macOS Intel/Apple Silicon）上是 BGRA 布局
-                val b = nativeBuffer.get().toInt() and 0xFF
-                val g = nativeBuffer.get().toInt() and 0xFF
-                val r = nativeBuffer.get().toInt() and 0xFF
-                val a = nativeBuffer.get().toInt() and 0xFF
-                pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
-            }
-
-            image.setRGB(0, 0, width, height, pixels, 0, width)
-            controller.latestVideoFrame = image
-        } catch (_: Exception) {
-            // 帧渲染异常不崩主流程
         }
     }
 }
