@@ -1,5 +1,7 @@
 package com.example.kmp_demo.core.player.platform
 
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import com.example.kmp_demo.core.player.domain.IPlayerController
 import com.example.kmp_demo.core.player.domain.VideoPlaybackState
 import kotlinx.coroutines.*
@@ -9,44 +11,32 @@ import kotlinx.coroutines.flow.asStateFlow
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
-import uk.co.caprica.vlcj.player.component.EmbeddedMediaPlayerComponent
 import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer
-import java.awt.Canvas
-import javax.swing.JPanel
+import uk.co.caprica.vlcj.player.embedded.videosurface.CallbackVideoSurface
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormat
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCallback
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallback
+import uk.co.caprica.vlcj.player.embedded.videosurface.callback.format.RV32BufferFormat
+import java.awt.image.BufferedImage
+import java.nio.ByteBuffer
 
 /**
- * Desktop 视频播放器 — 基于 VLCJ (libvlc) 的 AWT Canvas 原生视频输出。
+ * Desktop 视频播放器 — 基于 VLCJ (libvlc) 的 CallbackVideoSurface 渲染。
  *
- * 使用 [MediaPlayerFactory] + [EmbeddedMediaPlayerComponent] 管理 VLCJ 播放器，
- * 通过 [EmbeddedMediaPlayerComponent] 内部自动处理平台差异（macOS/Linux/Windows）。
- *
- * ## 架构优势（对比 CallbackVideoSurface）
- * - **不依赖 `sun.misc.Unsafe`**：AWT 视频输出使用 VLC 原生渲染管道，
- *   不需要 CallbackVideoSurface 的帧回调，彻底避免 JDK 17+ 上的 Unsafe 问题
- * - **硬件加速**：VLC 内部使用 OpenGL/VideoToolbox/DirectX 等硬件加速
- * - **跨平台兼容**：EmbeddedMediaPlayerComponent 内部自动处理平台差异
- *   - macOS: 使用 Window 作为视频表面（macOS 不支持 AWT Canvas 直接渲染）
- *   - Linux: 使用 X11 Window ID
- *   - Windows: 使用 HWND
- * - **性能更好**：无需每帧从 ByteBuffer → BufferedImage → ImageBitmap 转换
+ * ## 为什么在 macOS 上使用 CallbackVideoSurface？
+ * 1. **解决窗口脱离问题**：macOS 上的 AWT 不支持将 VLC 直接渲染到 Canvas，默认使用窗口叠加（Window Overlay），
+ *    会导致视频窗口脱离 Compose 窗口或始终置顶遮挡 UI。
+ * 2. **Compose 完美集成**：通过帧回调获取像素数据并转换为 [ImageBitmap]，使视频像普通 Compose 组件一样渲染，
+ *    支持在视频上方放置任何 Compose UI（如控制条、字幕）。
+ * 3. **硬件加速**：虽然是通过回调获取帧，但 VLC 内部依然可以使用硬件解码。
  *
  * ## 渲染流程
  * ```
- * VLCJ EmbeddedMediaPlayerComponent (JPanel)
- *     → 内部 ComponentVideoSurface
- *     → VLC 原生渲染管道（硬件加速）
- *     → SwingPanel → Compose Desktop 布局
+ * VLC 解码帧 → CallbackVideoSurface 回调 → BufferedImage → ImageBitmap → Compose Image
  * ```
  *
- * ## 前置条件
- * - 需要用户安装 VLC 播放器
- *   - macOS: `brew install vlc`
- *   - Linux: `sudo apt install vlc`
- *   - Windows: 从 https://www.videolan.org/vlc/ 下载安装
- *
  * @see IPlayerController
- * @see EmbeddedMediaPlayerComponent
- * @see EmbeddedMediaPlayer
+ * @see CallbackVideoSurface
  */
 class DesktopVideoPlayerController(
     private val mediaPlayerFactory: MediaPlayerFactory
@@ -58,29 +48,27 @@ class DesktopVideoPlayerController(
 
     // ==================== VLCJ 核心组件 ====================
 
-    /**
-     * EmbeddedMediaPlayerComponent 封装了 MediaPlayerFactory、EmbeddedMediaPlayer
-     * 和视频表面组件，内部自动处理平台差异。
-     *
-     * - macOS: 使用 Window 作为视频表面
-     * - Linux: 使用 X11 Window ID
-     * - Windows: 使用 HWND
-     */
-    val mediaPlayerComponent: EmbeddedMediaPlayerComponent = EmbeddedMediaPlayerComponent(
-        mediaPlayerFactory,
-        null,  // videoSurfaceComponent - null 表示使用默认 Canvas
-        null,  // fullScreenStrategy - null 表示不使用全屏策略
-        null,  // inputEvents - null 表示使用默认输入事件处理
-        null   // overlayWindow - null 表示不使用覆盖窗口
-    )
-
     /** VLCJ 嵌入式媒体播放器 */
-    val mediaPlayer: EmbeddedMediaPlayer = mediaPlayerComponent.mediaPlayer()
+    val mediaPlayer: EmbeddedMediaPlayer = mediaPlayerFactory.mediaPlayers().newEmbeddedMediaPlayer()
 
-    /** 视频表面组件（JPanel），通过 SwingPanel 嵌入 Compose 布局 */
-    val videoSurfaceComponent: JPanel = mediaPlayerComponent
+    /** 视频帧状态流，供 Compose UI 订阅并渲染 */
+    private val _videoFrame = MutableStateFlow<ImageBitmap?>(null)
+    val videoFrame: StateFlow<ImageBitmap?> = _videoFrame.asStateFlow()
+
+    /** 临时缓存 BufferedImage，用于像素转换 */
+    @Volatile
+    private var bufferedImage: BufferedImage? = null
 
     init {
+        // 配置回调视频表面
+        val videoSurface = CallbackVideoSurface(
+            DesktopBufferFormatCallback(),
+            DesktopRenderCallback(),
+            true, // lockVideoSurface
+            null  // videoSurfaceAdapter
+        )
+        mediaPlayer.videoSurface().set(videoSurface)
+
         // 注册 VLCJ 事件监听器
         mediaPlayer.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
             override fun playing(mediaPlayer: MediaPlayer) {
@@ -120,6 +108,45 @@ class DesktopVideoPlayerController(
                 _duration.value = newLength
             }
         })
+    }
+
+    // ==================== 渲染回调实现 ====================
+
+    private inner class DesktopBufferFormatCallback : BufferFormatCallback {
+        override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat {
+            // 使用 RV32 (ARGB) 格式，方便转换为 BufferedImage
+            // 立即初始化 BufferedImage，确保渲染开始时它已经就绪
+            bufferedImage = BufferedImage(
+                sourceWidth,
+                sourceHeight,
+                BufferedImage.TYPE_INT_ARGB_PRE
+            )
+            return RV32BufferFormat(sourceWidth, sourceHeight)
+        }
+
+        override fun allocatedBuffers(buffers: Array<out ByteBuffer>) {
+            // 缓冲区分配完成
+        }
+    }
+
+    private inner class DesktopRenderCallback : RenderCallback {
+        override fun display(
+            mediaPlayer: MediaPlayer,
+            nativeBuffers: Array<out ByteBuffer>,
+            bufferFormat: BufferFormat
+        ) {
+            val img = bufferedImage ?: return
+            val buffer = nativeBuffers[0]
+
+            // 将像素数据从 Native Buffer 复制到 BufferedImage
+            // 这里使用 IntBuffer 批量复制像素数据，比字节复制快得多
+            val pixelData = (img.raster.dataBuffer as java.awt.image.DataBufferInt).data
+            buffer.asIntBuffer().get(pixelData)
+
+            // 转换为 Compose 可用的 ImageBitmap
+            // toComposeImageBitmap() 在 JVM 上只是简单包装 BufferedImage，性能开销极小
+            _videoFrame.value = img.toComposeImageBitmap()
+        }
     }
 
     // ==================== 状态管理 ====================
@@ -236,7 +263,7 @@ class DesktopVideoPlayerController(
             }
 
             try {
-                mediaPlayerComponent.release()
+                mediaPlayer.release()
             } catch (_: Exception) {}
 
             try {

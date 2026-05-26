@@ -1,35 +1,29 @@
 package com.example.kmp_demo.core.player.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.awt.SwingPanel
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
-import java.awt.Dimension
-import javax.swing.JPanel
 
 /**
- * VLCJ 视频渲染表面 — 基于 EmbeddedMediaPlayerComponent 的原生视频输出。
+ * VLCJ 视频渲染表面 — 基于 CallbackVideoSurface 的 Compose 原生渲染。
  *
- * 使用 [DesktopVideoPlayerController.videoSurfaceComponent]（[JPanel]）作为视频渲染容器，
- * 通过 Compose 的 [SwingPanel] 嵌入到 Compose Desktop 布局中。
+ * 通过订阅 [DesktopVideoPlayerController.videoFrame] 获取 VLC 渲染的每一帧，
+ * 并使用 Compose 的 [Image] 组件进行绘制。
  *
  * ## 架构优势
- * - **不依赖 `sun.misc.Unsafe`**：使用 VLC 原生 AWT 视频输出管道
- * - **硬件加速**：VLC 内部使用 OpenGL/VideoToolbox/DirectX
- * - **跨平台兼容**：EmbeddedMediaPlayerComponent 内部自动处理平台差异
- * - **性能更好**：无需帧数据拷贝和转换
- *
- * ## 渲染流程
- * ```
- * VLCJ EmbeddedMediaPlayerComponent (JPanel)
- *     → 内部 ComponentVideoSurface
- *     → VLC 原生渲染管道（硬件加速）
- *     → SwingPanel → Compose Desktop 布局
- * ```
+ * - **完美解决 macOS 兼容性**：不再依赖窗口叠加，视频完全属于 Compose 渲染树。
+ * - **支持 UI 覆盖**：可以在视频上方显示任何 Compose 组件（如进度条、弹窗、字幕）。
+ * - **一致的生命周期**：视频帧随 Composable 自动更新和释放。
+ * - **跨平台表现一致**：在 Windows/Linux/macOS 上均表现稳定。
  *
  * @param controller VLCJ 播放器控制器
  * @param modifier Compose Modifier
@@ -39,28 +33,21 @@ fun VlcjVideoSurface(
     controller: DesktopVideoPlayerController,
     modifier: Modifier = Modifier,
 ) {
-    val videoSurfaceComponent = remember { controller.videoSurfaceComponent }
+    val videoFrame by controller.videoFrame.collectAsState()
 
-    // 组件卸载时释放视频表面
-    DisposableEffect(controller) {
-        onDispose {
-            // SwingPanel 移除时会自动处理子组件
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        videoFrame?.let { frame ->
+            Image(
+                bitmap = frame,
+                contentDescription = "Video Stream",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit
+            )
         }
-    }
-
-    Box(modifier = modifier.fillMaxSize()) {
-        SwingPanel(
-            modifier = Modifier.fillMaxSize(),
-            factory = {
-                videoSurfaceComponent.apply {
-                    // 设置最小尺寸
-                    minimumSize = Dimension(1, 1)
-                    preferredSize = Dimension(1, 1)
-                }
-            },
-            update = {
-                // SwingPanel 会自动调整大小
-            }
-        )
     }
 }
