@@ -10,17 +10,32 @@ import kotlinx.coroutines.flow.*
  * 职责：
  * 1. 将 IPlayerController 的多个 StateFlow 聚合为单一的 VideoPlayerUiState
  * 2. 提供自动隐藏控制栏的计时逻辑
- * 3. 提供位置轮询（部分底层播放器可能不主动推送位置更新）
- * 4. 作为业务逻辑的编排点，UI 层只需与此类交互
- * 5. S3: Seek 操作时通知缓存拦截器重新定位预加载
+ * 3. 缓存预加载与播放器启动的协调
  *
- * 设计原则：UI 层不直接操作 IPlayerController，而是通过 VideoPlayerManager
- * 进行间接控制，降低耦合度。
+ * 缓存架构（Desktop 端）：
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │ open(url)                                                   │
+ * │   ├─ 启动 CacheProxyServer（本地 HTTP 代理）                 │
+ * │   ├─ 获取代理 M3U8 URL：http://localhost:PORT/m3u8?url=...  │
+ * │   ├─ 启动 M3u8CacheInterceptor 后台预加载                    │
+ * │   └─ 播放器打开代理 URL → 所有切片请求经过本地缓存            │
+ * │                                                             │
+ * │ 切片请求流程：                                               │
+ * │ 播放器 → 本地代理 → 检查 DiskLruCache                       │
+ * │   ├─ 命中 → 直接从磁盘返回（毫秒级，零网络）                 │
+ * │   └─ 未命中 → 回源 CDN → 写入缓存 → 返回                    │
+ * └─────────────────────────────────────────────────────────────┘
+ *
+ * @param controller 底层播放器控制器
+ * @param cacheInterceptor 缓存拦截器（可选，用于预加载和 Seek 定位）
+ * @param proxyServer 本地 HTTP 代理服务器（可选，Desktop 端使用）
  */
 class VideoPlayerManager(
     private val controller: IPlayerController,
-    /** S3: 可选的缓存拦截器引用，用于 Seek 时重新定位预加载 */
+    /** 缓存拦截器，用于启动预加载和 Seek 时重新定位 */
     private val cacheInterceptor: M3u8CacheInterceptor? = null,
+    /** 本地 HTTP 代理服务器（JVM Desktop 端），让播放器所有请求经过缓存 */
+    private val proxyServer: Any? = null,
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -31,19 +46,15 @@ class VideoPlayerManager(
     private var autoHideDelayMs: Long = 3000L
 
     /** 单一事实来源：聚合后的 UI 状态 */
-    // 将 7 个 Flow 拆分为两个子聚合
     val uiState: StateFlow<VideoPlayerUiState> = combine(
-        // 组 1：核心播放状态
         combine(
             controller.playbackState,
             controller.currentPosition,
             controller.duration,
             controller.bufferedPercent
         ) { playbackState, position, duration, buffered ->
-            // 临时包装对象或直接传递
             Triple(playbackState, position, duration) to buffered
         },
-        // 组 2：UI 交互状态
         combine(
             controller.volume,
             controller.isFullScreen,
@@ -72,17 +83,52 @@ class VideoPlayerManager(
         initialValue = VideoPlayerUiState()
     )
 
-
     // ========== 播放控制 ==========
 
+    /**
+     * 打开视频源。
+     *
+     * 流程：
+     * 1. 启动缓存预加载（后台协程）
+     * 2. 如果代理服务器可用，获取代理 M3U8 URL
+     * 3. 播放器打开（代理后的）URL
+     */
     fun open(url: String, headers: Map<String, String>? = null) {
         scope.launch {
             try {
-                controller.open(url, headers)
+                // 步骤1：启动缓存预加载（零等待，后台异步）
+                cacheInterceptor?.intercept(url, headers)
+
+                // 步骤2：获取代理 URL（如果代理服务器可用）
+                val finalUrl = getProxiedUrl(url)
+
+                // 步骤3：等待起播冲刺完成（让预加载领先播放器几步）
+                delay(1_500L)
+
+                // 步骤4：播放器打开视频
+                controller.open(finalUrl, headers)
                 showControls()
             } catch (e: Exception) {
                 // 错误已通过 playbackState 传播
             }
+        }
+    }
+
+    /**
+     * 获取代理 URL。
+     *
+     * 如果 proxyServer 是 com.example.kmp_demo.core.player.cache.CacheProxyServer 类型，
+     * 则调用 getProxiedM3u8Url() 获取经过本地缓存的 M3U8 URL。
+     * 否则返回原始 URL。
+     */
+    private fun getProxiedUrl(originalUrl: String): String {
+        if (proxyServer == null) return originalUrl
+
+        return try {
+            val method = proxyServer::class.java.getMethod("getProxiedM3u8Url", String::class.java)
+            method.invoke(proxyServer, originalUrl) as? String ?: originalUrl
+        } catch (_: Exception) {
+            originalUrl
         }
     }
 
@@ -119,8 +165,6 @@ class VideoPlayerManager(
         scope.launch {
             try {
                 controller.seekTo(positionMs)
-                // S3: Seek 后通知缓存拦截器重新定位预加载
-                // targetDuration 使用默认值 10 秒，实际值在 M3U8 解析后已知
                 cacheInterceptor?.onSeek(positionMs, targetDuration = 10.0)
             } catch (_: Exception) { }
         }
@@ -160,19 +204,16 @@ class VideoPlayerManager(
 
     // ========== 控制栏显隐 ==========
 
-    /** 显示控制栏并启动自动隐藏倒计时 */
     fun showControls() {
         _isControlsVisible.value = true
         restartAutoHideTimer()
     }
 
-    /** 隐藏控制栏 */
     fun hideControls() {
         _isControlsVisible.value = false
         controlsAutoHideJob?.cancel()
     }
 
-    /** 切换控制栏显隐 */
     fun toggleControls() {
         if (_isControlsVisible.value) {
             hideControls()
@@ -181,7 +222,6 @@ class VideoPlayerManager(
         }
     }
 
-    /** 设置自动隐藏延迟 */
     fun setAutoHideDelay(delayMs: Long) {
         autoHideDelayMs = delayMs
     }

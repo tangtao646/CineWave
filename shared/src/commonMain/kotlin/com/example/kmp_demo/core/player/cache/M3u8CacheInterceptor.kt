@@ -1,30 +1,47 @@
 package com.example.kmp_demo.core.player.cache
 
-import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import io.ktor.util.date.getTimeMillis
 import io.ktor.utils.io.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okio.Buffer
 import okio.FileSystem
-import okio.Path.Companion.toPath
 
 /**
  * M3U8 缓存拦截器。
  *
- * 解法A：intercept 零等待返回原始 URL，后台异步预加载切片到 DiskLruCache。
- * ExoPlayer 通过 HybridDataSource 桥接读取缓存，未命中则回退 HTTP。
+ * 架构设计：
  *
- * 新增功能：集成 [ShareUrlResolver]，自动检测并解析分享链接
- * （如 `https://vip.ffzy-play9.com/share/xxx`），从中提取实际的视频流地址。
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │                   预加载引擎                                  │
+ * ├──────────┬──────────────────────────────────────────────────┤
+ * │  阶段1    │  阶段2：跟随预加载循环（永不退出）                  │
+ * │ 起播冲刺   │  while(true) {                                  │
+ * │ take(4)   │    每 30s 拉取 M3U8（非每次循环）                 │
+ * │ 无延迟     │    计算前瞻窗口 [anchor+1, anchor+8]             │
+ * │           │    流式下载未缓存切片（零额外内存拷贝）             │
+ * │           │    全部已缓存 → anchor++（自驱前进）               │
+ * │           │  }                                               │
+ * └──────────┴──────────────────────────────────────────────────┘
+ *
+ * 性能与内存安全：
+ * 1. 流式写入：Ktor ByteReadChannel → Okio Sink，零额外内存拷贝
+ *    ❌ 旧方案：response.readBytes() 将整个切片加载到内存
+ *    ✅ 新方案：8KB 缓冲区循环读写，内存占用恒定
+ * 2. 去重下载：使用 Set 跟踪正在下载的 URL，防止并发重复下载
+ * 3. 减少 M3U8 拉取频率：每 30s 拉取一次，非每次循环
+ * 4. 批量缓存检查：containsAll() 一次锁获取检查所有切片
  *
  * @param httpClient Ktor HttpClient
  * @param diskCache LRU 磁盘缓存
- * @param cacheDir 缓存目录
+ * @param cacheDir 缓存目录路径
  * @param fileSystem Okio 文件系统
  */
 class M3u8CacheInterceptor(
@@ -35,15 +52,28 @@ class M3u8CacheInterceptor(
 ) {
     private val parser = M3u8Parser()
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val stateMutex = Mutex()
+
+    // ==================== 受 Mutex 保护的内部状态 ====================
+    private var currentM3u8Url: String = ""
+    private var currentHeaders: Map<String, String>? = null
+    private var currentSegmentIndex: Int = 0
+    private var totalSegmentCount: Int = 0
+
+    /** 正在下载中的 URL 集合，用于去重 */
+    private val downloadingUrls = mutableSetOf<String>()
+
+    // ==================== 任务句柄 ====================
     private var preloadJob: Job? = null
     private var liveRefreshJob: Job? = null
+    private var continuousPreloadJob: Job? = null
 
-    /** 当前 M3U8 URL，直播刷新用 */
-    private var currentM3u8Url: String = ""
-    /** 当前请求头，透传所有子请求 */
-    private var currentHeaders: Map<String, String>? = null
+    /** 上次拉取 M3U8 列表的时间戳，用于控制拉取频率 */
+    private var lastPlaylistFetchTime: Long = 0L
+    /** 缓存的播放列表，避免每次循环都拉取 */
+    private var cachedPlaylist: M3u8Parser.M3u8Playlist? = null
 
-    /** S11: 预加载进度 */
+    /** 预加载进度 */
     data class CacheProgress(
         val cachedSegments: Int = 0,
         val totalSegments: Int = 0,
@@ -53,69 +83,99 @@ class M3u8CacheInterceptor(
     private val _cacheProgress = MutableStateFlow(CacheProgress())
     val cacheProgress: StateFlow<CacheProgress> = _cacheProgress.asStateFlow()
 
+    companion object {
+        /** 流式写入缓冲区大小：8KB，平衡 IO 次数与内存占用 */
+        private const val STREAM_BUFFER_SIZE = 8192
+        /** M3U8 列表拉取间隔：30 秒 */
+        private const val PLAYLIST_FETCH_INTERVAL_MS = 30_000L
+    }
+
+    // ==================== 公开 API ====================
+
     /**
      * 拦截 M3U8 URL，零等待返回。
-     *
-     * 后台异步启动预加载，不阻塞主链。
-     * 播放器通过 HybridDataSource 读取缓存或回退 HTTP。
-     *
-     * @param originalUrl 原始 M3U8 URL
-     * @param headers 请求头（S8）
-     * @return 原始 URL
      */
     suspend fun intercept(
         originalUrl: String,
         headers: Map<String, String>? = null,
     ): String {
-        currentM3u8Url = originalUrl
-        currentHeaders = headers
-
-        // 异步启动预加载，绝不阻塞主链
-        scope.launch {
-            try {
-                preloadInternal(originalUrl, headers)
-            } catch (e: Exception) {
-                // 保证预加载异常不崩主流程
-            }
+        stateMutex.withLock {
+            currentM3u8Url = originalUrl
+            currentHeaders = headers
+            currentSegmentIndex = 0
+            totalSegmentCount = 0
+            cachedPlaylist = null
+            lastPlaylistFetchTime = 0L
         }
 
-        // 极其重要：直接无脑返回原始链接，起播零等待！
+        preloadJob?.cancel()
+        continuousPreloadJob?.cancel()
+
+        preloadJob = scope.launch {
+            try {
+                preloadInternal(originalUrl, headers)
+            } catch (_: Exception) { }
+        }
+
         return originalUrl
     }
 
     /**
-     * S3: Seek 后重新定位预加载起点。
-     *
-     * @param positionMs 播放位置（毫秒）
-     * @param targetDuration 切片时长（秒）
+     * 播放位置回调：由播放器定期调用。
      */
-    fun onSeek(positionMs: Long, targetDuration: Double) {
+    fun onPlaybackPosition(positionMs: Long, targetDuration: Double) {
         if (targetDuration <= 0.0) return
-        val segmentIndex = (positionMs / 1000.0 / targetDuration).toInt()
-        // 取消当前预加载，从新位置重新开始
-        preloadJob?.cancel()
-        preloadJob = scope.launch {
-            preloadSegmentsFrom(segmentIndex)
+        val newIndex = (positionMs / 1000.0 / targetDuration).toInt()
+
+        scope.launch {
+            stateMutex.withLock {
+                if (newIndex > currentSegmentIndex) {
+                    currentSegmentIndex = newIndex
+                }
+            }
         }
     }
 
     /**
-     * S9: 重置状态（切换剧集时调用）。
-     * 取消预加载和直播刷新，保留磁盘缓存。
+     * Seek 后重新定位预加载起点。
      */
-    fun reset() {
-        preloadJob?.cancel()
-        preloadJob = null
-        liveRefreshJob?.cancel()
-        liveRefreshJob = null
-        currentM3u8Url = ""
-        currentHeaders = null
-        _cacheProgress.value = CacheProgress()
+    fun onSeek(positionMs: Long, targetDuration: Double) {
+        if (targetDuration <= 0.0) return
+        val segmentIndex = (positionMs / 1000.0 / targetDuration).toInt()
+
+        scope.launch {
+            stateMutex.withLock {
+                currentSegmentIndex = segmentIndex
+                preloadJob?.cancel()
+                continuousPreloadJob?.cancel()
+            }
+            triggerContinuousPreload()
+        }
     }
 
     /**
-     * 完全停止，释放协程作用域。
-     * 与 [reset] 区别：stop 取消 scope，实例不可复用。
+     * 重置状态（切换剧集时调用）。
+     */
+    fun reset() {
+        scope.launch {
+            stateMutex.withLock {
+                preloadJob?.cancel()
+                continuousPreloadJob?.cancel()
+                liveRefreshJob?.cancel()
+                currentM3u8Url = ""
+                currentHeaders = null
+                currentSegmentIndex = 0
+                totalSegmentCount = 0
+                downloadingUrls.clear()
+                cachedPlaylist = null
+                lastPlaylistFetchTime = 0L
+                _cacheProgress.value = CacheProgress()
+            }
+        }
+    }
+
+    /**
+     * 完全停止。
      */
     fun stop() {
         reset()
@@ -126,186 +186,289 @@ class M3u8CacheInterceptor(
 
     /**
      * 内部预加载入口。
-     * 下载 M3U8 → 解析 → 按类型分发（多码率/加密/直播/点播）。
-     * 异常吞掉，不崩主流程。
      */
     private suspend fun preloadInternal(
         m3u8Url: String,
         headers: Map<String, String>?,
     ) {
-        try {
-            // 1. 下载 M3U8 文件（S8: 透传 headers）
-            val response: HttpResponse = httpClient.get(m3u8Url) {
-                headers?.forEach { (key, value) -> header(key, value) }
-            }
-            val content = response.bodyAsText()
+        val playlist = fetchPlaylist(m3u8Url, headers) ?: return
 
-            // 2. 解析切片列表
-            val baseUrl = m3u8Url.substringBeforeLast("/")
-            val playlist = parser.parse(content, baseUrl)
-
-            // S6: 多码率处理 — 递归下载子播放列表
-            if (playlist.isMultivariant && playlist.variantUrls.isNotEmpty()) {
-                handleMultivariantInternal(playlist, headers)
-                return
-            }
-
-            // S7: 加密流处理 — 仅预加载
-            if (playlist.isEncrypted) {
-                downloadSegments(playlist, headers)
-                return
-            }
-
-            // S4: 直播流 — 启动定期刷新
-            if (playlist.isLive) {
-                startLiveRefresh(m3u8Url, headers)
-            }
-
-            // 3. 下载切片（流式写入 DiskLruCache）
-            downloadSegments(playlist, headers)
-        } catch (_: Exception) {
-            // 预加载异常不崩主流程
+        stateMutex.withLock {
+            totalSegmentCount = playlist.segments.size
+            cachedPlaylist = playlist
+            lastPlaylistFetchTime = currentTimeMillis()
         }
-    }
 
-    /** S6: 处理多码率，选第一个子列表递归预加载。 */
-    private suspend fun handleMultivariantInternal(
-        playlist: M3u8Parser.M3u8Playlist,
-        headers: Map<String, String>?,
-    ) {
-        val selectedVariant = playlist.variantUrls.firstOrNull() ?: return
-        preloadInternal(selectedVariant, headers)
-    }
+        if (playlist.isMultivariant && playlist.variantUrls.isNotEmpty()) {
+            preloadInternal(playlist.variantUrls.first(), headers)
+            return
+        }
 
-    /** S4: 直播流定期刷新，每 30s 轮询新切片。 */
-    private fun startLiveRefresh(m3u8Url: String, headers: Map<String, String>?) {
-        liveRefreshJob?.cancel()
-        liveRefreshJob = scope.launch {
-            while (isActive) {
-                delay(30_000L) // 每 30 秒刷新一次
-                try {
-                    val response: HttpResponse = httpClient.get(m3u8Url) {
-                        headers?.forEach { (key, value) -> header(key, value) }
-                    }
-                    val content = response.bodyAsText()
-                    val baseUrl = m3u8Url.substringBeforeLast("/")
-                    val playlist = parser.parse(content, baseUrl)
-                    downloadSegments(playlist, headers)
-                } catch (_: Exception) { }
-            }
+        if (playlist.isLive) {
+            startLiveRefresh(m3u8Url, headers)
+        }
+
+        // 阶段1：起播冲刺
+        downloadSegments(playlist, startIndex = 0, count = 4, headers = headers)
+
+        // 阶段2：跟随预加载循环
+        continuousPreloadJob?.cancel()
+        continuousPreloadJob = scope.launch {
+            continuousPreloadLoop(m3u8Url, headers)
         }
     }
 
     /**
-     * 下载切片到磁盘缓存（流式写入）。
+     * 跟随预加载循环 —— 核心引擎。
      *
-     * Ktor ByteReadChannel → Okio Buffer → DiskLruCache.putStream() → Sink。
-     * 跳过已缓存，单切片失败不影响整体，最多取 50 个。
-     *
-     * @param playlist 播放列表
-     * @param headers 请求头（S8）
+     * 永不退出的循环，自驱前进：
+     * - 每 30s 拉取一次 M3U8 列表（非每次循环）
+     * - 前瞻窗口 [anchor+1, anchor+8]
+     * - 流式下载，零额外内存拷贝
+     * - 全部已缓存 → anchor++ 自驱前进
      */
-    private suspend fun downloadSegments(
-        playlist: M3u8Parser.M3u8Playlist,
-        headers: Map<String, String>? = null,
+    private suspend fun continuousPreloadLoop(
+        m3u8Url: String,
+        headers: Map<String, String>?,
     ) {
-        val totalSegments = playlist.segments.size
-        val segmentsToDownload = playlist.segments.take(15)
-        var cachedCount = 0
+        val lookAheadWindow = 8
 
-        for (segment in segmentsToDownload) {
-            if (!currentCoroutineContext().isActive) break
+        while (currentCoroutineContext().isActive) {
+            // 1. 按需拉取 M3U8 列表（每 30s 一次，避免频繁网络请求）
+            val playlist = getOrRefreshPlaylist(m3u8Url, headers) ?: break
 
-            // 跳过已缓存的切片
-            if (diskCache.contains(segment.url)) {
-                cachedCount++
-                updateProgress(cachedCount, totalSegments)
+            // 2. 获取当前锚点
+            val anchor = stateMutex.withLock { currentSegmentIndex }
+
+            // 3. 计算前瞻窗口
+            val segmentsToPreload = playlist.segments
+                .drop(anchor + 1)
+                .take(lookAheadWindow)
+
+            if (segmentsToPreload.isEmpty()) {
+                delay(5_000L)
                 continue
             }
 
-            try {
-                // S8: 透传 headers
-                // 使用 Ktor 3.x 流式读取：prepareGet + execute
-                httpClient.prepareGet(segment.url) {
-                    headers?.forEach { (key, value) -> header(key, value) }
-                }.execute { response ->
-                    val channel = response.bodyAsChannel()
-                    // 缝合：将 Ktor 的 Channel 写入到 DiskLruCache 的 Sink 中
-                    diskCache.putStream(segment.url) { sink ->
-                        runBlocking {
-                            val okioBuffer = Buffer()
-                            val byteArray = ByteArray(8192)
-                            while (!channel.isClosedForRead) {
-                                val read = channel.readAvailable(byteArray, 0, byteArray.size)
-                                if (read <= 0) break
-                                // 写入 Okio Buffer，然后 flush 到 Sink
-                                okioBuffer.write(byteArray, 0, read)
-                                sink.write(okioBuffer, read.toLong())
-                            }
-                        }
+            // 4. 批量检查缓存状态（一次锁获取检查所有切片）
+            val urlsToCheck = segmentsToPreload.map { it.url }
+            val cacheStatus = diskCache.containsAll(urlsToCheck)
+
+            // 5. 检查是否有未缓存的切片
+            val uncachedSegments = segmentsToPreload.filter { !cacheStatus[it.url]!! }
+
+            if (uncachedSegments.isEmpty()) {
+                // 全部已缓存 → 自驱前进
+                stateMutex.withLock {
+                    currentSegmentIndex = anchor + 1
+                }
+                delay(500L)
+                continue
+            }
+
+            // 6. 流式下载未缓存的切片
+            for (segment in uncachedSegments) {
+                if (!currentCoroutineContext().isActive) break
+
+                // 去重检查：如果正在下载中，跳过
+                val isDownloading = stateMutex.withLock {
+                    if (segment.url in downloadingUrls) true
+                    else {
+                        downloadingUrls.add(segment.url)
+                        false
                     }
                 }
-                cachedCount++
-                updateProgress(cachedCount, totalSegments)
+                if (isDownloading) continue
 
-            } catch (_: Exception) {
-                // 单个切片下载失败不影响整体
+                try {
+                    streamDownloadAndCache(segment.url, headers)
+                } finally {
+                    stateMutex.withLock {
+                        downloadingUrls.remove(segment.url)
+                    }
+                }
+
+                // 自适应延迟
+                delay((segment.duration * 200).toLong())
+            }
+
+            delay(1_000L)
+        }
+    }
+
+    /**
+     * 获取或刷新缓存的播放列表。
+     *
+     * 每 [PLAYLIST_FETCH_INTERVAL_MS] 拉取一次，避免频繁网络请求。
+     */
+    private suspend fun getOrRefreshPlaylist(
+        url: String,
+        headers: Map<String, String>?,
+    ): M3u8Parser.M3u8Playlist? {
+        val now = currentTimeMillis()
+        val needsRefresh = stateMutex.withLock {
+            if (cachedPlaylist == null || now - lastPlaylistFetchTime > PLAYLIST_FETCH_INTERVAL_MS) {
+                true
+            } else false
+        }
+
+        if (!needsRefresh) {
+            return stateMutex.withLock { cachedPlaylist }
+        }
+
+        val playlist = fetchPlaylist(url, headers)
+        if (playlist != null) {
+            stateMutex.withLock {
+                cachedPlaylist = playlist
+                lastPlaylistFetchTime = now
+                totalSegmentCount = playlist.segments.size
+            }
+        }
+        return playlist
+    }
+
+    /**
+     * Seek 后触发跟随预加载。
+     */
+    private fun triggerContinuousPreload() {
+        continuousPreloadJob?.cancel()
+        continuousPreloadJob = scope.launch {
+            val (url, headers) = stateMutex.withLock {
+                Pair(currentM3u8Url, currentHeaders)
+            }
+            if (url.isNotEmpty()) {
+                continuousPreloadLoop(url, headers)
             }
         }
     }
 
     /**
-     * S3: 从指定索引开始预加载（Seek 后重新定位）。
-     * 重新下载 M3U8，取 startIndex 后 30 个切片。
+     * 下载指定范围的切片（阶段1：起播冲刺用）。
      */
-    private suspend fun preloadSegmentsFrom(startIndex: Int) {
-        try {
-            val response: HttpResponse = httpClient.get(currentM3u8Url) {
-                currentHeaders?.forEach { (key, value) -> header(key, value) }
+    private suspend fun downloadSegments(
+        playlist: M3u8Parser.M3u8Playlist,
+        startIndex: Int,
+        count: Int,
+        headers: Map<String, String>?,
+    ) {
+        val segments = playlist.segments.drop(startIndex).take(count)
+        var cachedCount = 0
+
+        for (segment in segments) {
+            if (!currentCoroutineContext().isActive) break
+
+            if (diskCache.contains(segment.url)) {
+                cachedCount++
+                updateProgress(cachedCount, playlist.segments.size)
+                continue
             }
-            val content = response.bodyAsText()
-            val baseUrl = currentM3u8Url.substringBeforeLast("/")
-            val playlist = parser.parse(content, baseUrl)
 
-            // 从 startIndex 开始取后续 30 个切片
-            val segmentsToPreload = playlist.segments
-                .drop(startIndex)
-                .take(30)
-
-            for (segment in segmentsToPreload) {
-                if (!currentCoroutineContext().isActive) break
-                if (diskCache.contains(segment.url)) continue
-
-                try {
-                    httpClient.prepareGet(segment.url) {
-                        currentHeaders?.forEach { (key, value) -> header(key, value) }
-                    }.execute { response ->
-                        val channel = response.bodyAsChannel()
-                        diskCache.putStream(segment.url) { sink ->
-                            runBlocking {
-                                val okioBuffer = Buffer()
-                                val byteArray = ByteArray(8192)
-                                while (!channel.isClosedForRead) {
-                                    val read = channel.readAvailable(byteArray, 0, byteArray.size)
-                                    if (read <= 0) break
-                                    okioBuffer.write(byteArray, 0, read)
-                                    sink.write(okioBuffer, read.toLong())
-                                }
-                            }
-                        }
-                    }
-                    delay((segment.duration * 500).toLong())
-                } catch (_: Exception) { }
-            }
-        } catch (_: Exception) { }
+            streamDownloadAndCache(segment.url, headers)
+            cachedCount++
+            updateProgress(cachedCount, playlist.segments.size)
+        }
     }
 
-    /** S11: 更新缓存进度。cacheSizeBytes 暂未更新，需调用 stats() 获取。 */
+    /**
+     * 流式下载并缓存单个切片 —— 零 OOM 风险。
+     *
+     * 核心改进：
+     * ❌ 旧方案：response.readBytes() → 整个切片 ByteArray → Buffer → Sink
+     *    （整个切片加载到内存，10MB 切片 = 10MB 内存峰值）
+     *
+     * ✅ 新方案：ByteReadChannel → 8KB 循环缓冲区 → Sink
+     *    （内存峰值 = 8KB，与切片大小无关）
+     *
+     * 使用 Ktor 的 prepareGet + execute 获取 ByteReadChannel，
+     * 在 putStream 的 suspend block 中循环读取并写入 Okio Sink。
+     */
+    private suspend fun streamDownloadAndCache(
+        url: String,
+        headers: Map<String, String>?,
+    ) {
+        if (diskCache.contains(url)) return
+
+        try {
+            httpClient.prepareGet(url) {
+                headers?.forEach { (key, value) -> header(key, value) }
+            }.execute { response ->
+                if (response.status.value !in 200..299) return@execute
+
+                val channel: ByteReadChannel = response.bodyAsChannel()
+
+                // 在 putStream 的 suspend block 中流式写入
+                // block 是 suspend 函数，可以安全调用挂起函数
+                diskCache.putStream(url) { sink ->
+                    val buffer = Buffer()
+                    val tempArray = ByteArray(STREAM_BUFFER_SIZE)
+
+                    while (!channel.isClosedForRead) {
+                        // 挂起读取最多 8KB 数据
+                        val bytesRead = channel.readAvailable(tempArray, 0, STREAM_BUFFER_SIZE)
+                        if (bytesRead > 0) {
+                            buffer.write(tempArray, 0, bytesRead)
+                            sink.write(buffer, buffer.size)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // 单个切片失败不影响整体
+        }
+    }
+
+    /**
+     * 下载并解析 M3U8 播放列表。
+     */
+    private suspend fun fetchPlaylist(
+        url: String,
+        headers: Map<String, String>?,
+    ): M3u8Parser.M3u8Playlist? {
+        return try {
+            val response: HttpResponse = httpClient.get(url) {
+                headers?.forEach { (key, value) -> header(key, value) }
+            }
+            val baseUrl = url.substringBeforeLast("/")
+            parser.parse(response.bodyAsText(), baseUrl)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 直播流定期刷新。
+     */
+    private fun startLiveRefresh(m3u8Url: String, headers: Map<String, String>?) {
+        liveRefreshJob?.cancel()
+        liveRefreshJob = scope.launch {
+            while (currentCoroutineContext().isActive) {
+                delay(30_000L)
+                val playlist = fetchPlaylist(m3u8Url, headers) ?: continue
+                downloadSegments(playlist, startIndex = 0, count = 3, headers = headers)
+            }
+        }
+    }
+
     private fun updateProgress(cached: Int, total: Int) {
         _cacheProgress.value = CacheProgress(
             cachedSegments = cached,
             totalSegments = total,
             cacheSizeBytes = _cacheProgress.value.cacheSizeBytes,
         )
+    }
+
+    /**
+     * 跨平台获取当前时间戳。
+     *
+     * 使用 System.currentTimeMillis()（JVM/Android）或
+     * 回退到协程的单调时钟（iOS/其他）。
+     */
+    private fun currentTimeMillis(): Long {
+        return try {
+            System.currentTimeMillis()
+        } catch (_: Exception) {
+            // 非 JVM 平台回退方案
+            (getTimeMillis())
+        }
     }
 }

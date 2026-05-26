@@ -106,6 +106,8 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.ktor.server.core)
+            implementation(libs.ktor.server.netty)
             implementation(libs.room.runtime)
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(libs.koin.core)

@@ -2,7 +2,6 @@ package com.example.kmp_demo.core.player.cache
 
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
-import kotlinx.coroutines.runBlocking
 import java.io.IOException
 
 /**
@@ -44,7 +43,8 @@ class HybridDataSource(
         val key = dataSpec.uri.toString()
 
         // 关键点：询问 KMP 磁盘缓存是否包含这个 URL (TS分片或M3U8)
-        val hasCache = runBlocking { diskCache.contains(key) }
+        // contains 现在是非挂起函数，可直接在 ExoPlayer 的 IO 线程上调用
+        val hasCache = diskCache.contains(key)
 
         activeDataSource = if (hasCache) {
             // 命中：走本地 Okio 流
