@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalView
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.M3u8CacheInterceptor
 import com.example.kmp_demo.core.player.domain.LocalFullscreenController
+import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 import com.example.kmp_demo.core.player.platform.ExoPlayerController
@@ -100,10 +101,15 @@ fun AndroidVideoPlayerScreen(
     // S11: 收集缓存进度（可选 UI 展示）
     val cacheProgress by interceptor.cacheProgress.collectAsState()
 
+    // ========== 分享链接解析器 ==========
+    val shareUrlResolver = remember(httpClient) { ShareUrlResolver(httpClient) }
+
     // ========== 打开视频 ==========
     LaunchedEffect(url, headers) {
         interceptor.reset()
-        val actualUrl = interceptor.intercept(url, headers)
+        // 先解析分享链接（如果是），获取实际的视频流地址
+        val resolvedUrl = shareUrlResolver.resolve(url, headers)
+        val actualUrl = interceptor.intercept(resolvedUrl, headers)
         manager.open(actualUrl, headers)
     }
 

@@ -21,9 +21,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import com.example.kmp_demo.core.player.domain.IPlayerController
+import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
+import com.example.kmp_demo.core.network.createHttpClient
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -58,9 +60,14 @@ actual fun PlatformVideoPlayerScreen(
     val uiState by manager.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
-    // 打开视频
+    // 分享链接解析器
+    val httpClient = remember { createHttpClient() }
+    val shareUrlResolver = remember(httpClient) { ShareUrlResolver(httpClient) }
+
+    // 打开视频（先解析分享链接）
     LaunchedEffect(url, headers) {
-        manager.open(url, headers)
+        val resolvedUrl = shareUrlResolver.resolve(url, headers)
+        manager.open(resolvedUrl, headers)
     }
 
     // 全屏状态变化
@@ -71,6 +78,7 @@ actual fun PlatformVideoPlayerScreen(
     // 释放资源
     DisposableEffect(manager) {
         onDispose {
+            httpClient.close()
             manager.release()
         }
     }
