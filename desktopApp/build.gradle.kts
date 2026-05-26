@@ -61,7 +61,7 @@ compose.desktop {
         }
 
         // JDK 17+ 兼容性配置：vlcj 需要访问 sun.misc.Unsafe
-        jvmArgs(
+        jvmArgs += listOf(
             "--add-opens", "java.base/sun.misc=ALL-UNNAMED",
             "--add-opens", "jdk.unsupported/sun.misc=ALL-UNNAMED",
         )
