@@ -29,11 +29,11 @@ jobs:
           echo "${{ secrets.DB_JSON }}" | base64 -d > shared/src/commonMain/composeResources/files/db.json
           echo "✅ db.json injected successfully ($(wc -c < shared/src/commonMain/composeResources/files/db.json) bytes)"
 
-      - name: Setup JDK 17
+      - name: Setup JDK 8
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '8'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
