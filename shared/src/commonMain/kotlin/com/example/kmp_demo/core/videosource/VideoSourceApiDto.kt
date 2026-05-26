@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
  * ```json
  * {
  *   "code": 1,
- *   "list": [ { "vod_id": "...", "vod_name": "...", "vod_play_url": "...", ... } ]
+ *   "list": [ { "vod_id": 160999, "vod_name": "...", "vod_play_url": "...", ... } ]
  * }
  * ```
  */
@@ -22,10 +22,12 @@ data class VideoSourceApiResponse(
 
 /**
  * 资源站点 API 返回的单个影片条目。
+ *
+ * vod_id 在 API 响应中为数字类型（如 160999），与 API 保持一致。
  */
 @Serializable
 data class VideoSourceApiItem(
-    @SerialName("vod_id") val vodId: String = "",
+    @SerialName("vod_id") val vodId: Int = 0,
     @SerialName("vod_name") val vodName: String = "",
     @SerialName("vod_pic") val vodPic: String? = null,
     @SerialName("vod_play_url") val vodPlayUrl: String? = null,
