@@ -249,6 +249,7 @@ class DesktopVideoPlayerController(
         scope.cancel()
 
         // 安全释放 VLCJ 资源
+        // 注意：不释放 mediaPlayerFactory，因为它是全局单例，由 DI 容器管理生命周期
         Thread {
             try {
                 if (mediaPlayer.status().isPlaying) {
@@ -264,10 +265,6 @@ class DesktopVideoPlayerController(
 
             try {
                 mediaPlayer.release()
-            } catch (_: Exception) {}
-
-            try {
-                mediaPlayerFactory.release()
             } catch (_: Exception) {}
         }.apply {
             isDaemon = true

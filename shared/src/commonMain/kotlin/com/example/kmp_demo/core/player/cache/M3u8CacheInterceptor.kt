@@ -1,5 +1,6 @@
 package com.example.kmp_demo.core.player.cache
 
+import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -17,6 +18,9 @@ import okio.Path.Companion.toPath
  *
  * 解法A：intercept 零等待返回原始 URL，后台异步预加载切片到 DiskLruCache。
  * ExoPlayer 通过 HybridDataSource 桥接读取缓存，未命中则回退 HTTP。
+ *
+ * 新增功能：集成 [ShareUrlResolver]，自动检测并解析分享链接
+ * （如 `https://vip.ffzy-play9.com/share/xxx`），从中提取实际的视频流地址。
  *
  * @param httpClient Ktor HttpClient
  * @param diskCache LRU 磁盘缓存

@@ -63,6 +63,12 @@ class ExoPlayerController(
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var positionPollingJob: Job? = null
 
+    /** 默认的 HTTP 数据源工厂，用于克隆并添加请求头 */
+    private val baseHttpDataSourceFactory = DefaultHttpDataSource.Factory()
+        .setConnectTimeoutMs(8000)
+        .setReadTimeoutMs(8000)
+        .setAllowCrossProtocolRedirects(true)
+
     /** 暴露 ExoPlayer 实例，供 [ExoPlayerSurface] 的 AndroidView 绑定 */
     val player: ExoPlayer
 
@@ -86,21 +92,15 @@ class ExoPlayerController(
 
     init {
         // ==================== 构建混合数据源工厂 ====================
-        // 1. 创建标准的网络数据源工厂（配置 Connect/Read Timeout）
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(8000)
-            .setReadTimeoutMs(8000)
-            .setAllowCrossProtocolRedirects(true)
-
-        // 2. 创建组装好的混合复合数据源工厂
+        // 使用基础工厂创建混合数据源工厂
         val hybridDataSourceFactory = DataSource.Factory {
             HybridDataSource(
                 diskCache = diskCache,
-                networkDataSource = httpDataSourceFactory.createDataSource()
+                networkDataSource = baseHttpDataSourceFactory.createDataSource()
             )
         }
 
-        // 3. 构建 HlsMediaSource 工厂
+        // 构建 HlsMediaSource 工厂
         val hlsMediaSourceFactory = HlsMediaSource.Factory(hybridDataSourceFactory)
 
         val myLoadControl = DefaultLoadControl.Builder()
@@ -188,6 +188,7 @@ class ExoPlayerController(
         }
     }
 
+    @OptIn(UnstableApi::class)
     override suspend fun open(url: String, headers: Map<String, String>?) {
         _playbackState.value = VideoPlaybackState.BUFFERING
         try {
@@ -196,7 +197,30 @@ class ExoPlayerController(
                 .setUri(Uri.parse(url))
                 .build()
 
-            player.setMediaItem(mediaItem)
+            // 创建一个新的 HTTP 数据源工厂以应用请求头
+            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+                .setConnectTimeoutMs(8000)
+                .setReadTimeoutMs(8000)
+                .setAllowCrossProtocolRedirects(true)
+
+            if (!headers.isNullOrEmpty()) {
+                // 注意：Media3 中设置默认请求头的方法
+                httpDataSourceFactory.setDefaultRequestProperties(headers)
+            }
+
+            // 构建包含缓存逻辑的复合数据源工厂
+            val hybridDataSourceFactory = DataSource.Factory {
+                HybridDataSource(
+                    diskCache = diskCache,
+                    networkDataSource = httpDataSourceFactory.createDataSource()
+                )
+            }
+
+            // 创建 HLS 媒体资源
+            val mediaSource = HlsMediaSource.Factory(hybridDataSourceFactory)
+                .createMediaSource(mediaItem)
+
+            player.setMediaSource(mediaSource)
             player.prepare()
             player.play()
         } catch (e: Exception) {
