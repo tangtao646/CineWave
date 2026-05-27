@@ -1,5 +1,7 @@
 package com.example.kmp_demo.core.player.domain
 
+import com.example.kmp_demo.core.player.cache.SegmentInfo
+
 /**
  * 视频播放器 UI 状态聚合模型
  *
@@ -14,7 +16,9 @@ data class VideoPlayerUiState(
     val volume: Float = 1.0f,
     val isFullScreen: Boolean = false,
     val isControlsVisible: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    /** 切片缓存状态列表，用于在 SeekBar 上标记已缓存/未缓存区域 */
+    val cachedSegments: List<SegmentInfo> = emptyList(),
 ) {
     /** 播放进度百分比 0f ~ 1f */
     val progressFraction: Float

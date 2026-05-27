@@ -1,5 +1,6 @@
 package com.example.kmp_demo.core.player.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -13,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -67,12 +70,13 @@ fun VideoPlayerControls(
                 )
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            // 进度条
+            // 进度条（带缓存区域标记）
             VideoProgressSlider(
                 progress = state.progressFraction,
                 bufferedPercent = state.bufferedPercent,
                 onSeek = { fraction -> onAction(PlayerAction.SeekToFraction(fraction)) },
-                colors = sliderColor
+                colors = sliderColor,
+                state = state,  // 传入状态以获取缓存信息
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -185,14 +189,21 @@ internal fun CenterPlayButton(
 }
 
 /**
- * 视频进度条
+ * 视频进度条 — 带缓存区域标记。
+ *
+ * 在进度条上绘制已缓存/未缓存的切片区域：
+ * -  红色半透明区域 = 已缓存到本地磁盘，拖动到这里秒播
+ * - ⬜ 灰色区域 = 未缓存，需要网络加载
+ *
+ * 参考市面上的加速播放器（如 PotPlayer、IINA、Infuse）的缓存可视化设计。
  */
 @Composable
 private fun VideoProgressSlider(
     progress: Float,
     bufferedPercent: Int,
     onSeek: (Float) -> Unit,
-    colors: SliderColors
+    colors: SliderColors,
+    state: VideoPlayerUiState,  // 新增：用于获取缓存状态
 ) {
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableStateOf(0f) }
@@ -201,11 +212,17 @@ private fun VideoProgressSlider(
 
     var sliderWidth by remember { mutableStateOf(0f) }
 
+    // 缓存区域颜色
+    val cachedColor = Color(0x66FF4444)  // 半透明红色
+    val uncachedColor = Color(0x33FFFFFF) // 半透明白色
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(24.dp)
-            .onSizeChanged { sliderWidth = it.width.toFloat() }
+            .onSizeChanged {
+                sliderWidth = it.width.toFloat()
+            }
             .pointerInput(sliderWidth) {
                 detectTapGestures { offset ->
                     if (sliderWidth > 0f) {
@@ -215,6 +232,41 @@ private fun VideoProgressSlider(
                 }
             }
     ) {
+        // 缓存状态标记层（在 Slider 下方绘制）
+        if (state.cachedSegments.isNotEmpty() && state.duration > 0) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(24.dp)
+            ) {
+                val trackHeight = 4.dp.toPx()
+                val trackTop = (size.height - trackHeight) / 2f
+                val totalDuration = state.duration.toFloat()
+
+                // 绘制每个切片的缓存状态
+                state.cachedSegments.forEach { segment ->
+                    val startFraction = segment.startMs.toFloat() / totalDuration
+                    val widthFraction = segment.durationMs.toFloat() / totalDuration
+
+                    val left = startFraction * size.width
+                    val segWidth = widthFraction * size.width
+
+                    // 跳过宽度为 0 的切片
+                    if (segWidth <= 0f) return@forEach
+
+                    val color = if (segment.isCached) cachedColor else uncachedColor
+
+                    // 绘制缓存标记条
+                    drawRect(
+                        color = color,
+                        topLeft = Offset(left, trackTop),
+                        size = Size(segWidth, trackHeight),
+                    )
+                }
+            }
+        }
+
+        // Material3 Slider
         Slider(
             value = displayProgress,
             onValueChange = { dragProgress = it; isDragging = true },

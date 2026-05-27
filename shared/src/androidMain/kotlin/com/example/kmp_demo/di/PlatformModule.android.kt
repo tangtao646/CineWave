@@ -1,49 +1,70 @@
 package com.example.kmp_demo.di
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import com.example.kmp_demo.core.data.local.room.AndroidAppContext
 import com.example.kmp_demo.core.data.local.room.AppDatabase
 import com.example.kmp_demo.core.data.local.room.getDatabaseBuilder
 import com.example.kmp_demo.core.data.local.room.getRoomDatabase
 import com.example.kmp_demo.core.player.cache.DiskLruCache
-import com.example.kmp_demo.core.player.cache.M3u8CacheInterceptor
+import com.example.kmp_demo.core.player.cache.ExoPlayerCache
+import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.IPlayerController
 import com.example.kmp_demo.core.player.platform.ExoPlayerController
 import com.example.kmp_demo.core.player.platform.getDefaultCacheDir
-import io.ktor.client.HttpClient
 import org.koin.core.module.Module
 import org.koin.dsl.module
 
 /**
- * Android 平台特定的 Koin 模块
+ * Android 平台特定的 Koin 模块。
+ *
+ * ## 缓存架构变更
+ * 从旧的「本地 HTTP 代理 (CacheProxyServer)」切换为
+ * ExoPlayer 原生「SimpleCache + CacheDataSource」方案。
+ *
+ * - [ExoPlayerCache]：管理 SimpleCache 生命周期，全局单例
+ * - [DiskLruCache]：仍保留，供 SegmentCacheTracker 的 SeekBar 缓存可视化使用
  */
+@OptIn(UnstableApi::class)
 actual val platformModule: Module = module {
+
     // === Room Database ===
-    // 使用 AndroidAppContext 获取 Context，绕过 Koin 在 Common 层初始化时的上下文注入限制
     single<AppDatabase> {
         getRoomDatabase(getDatabaseBuilder())
     }
 
-    // === Disk Cache ===
+    // === ExoPlayer 原生磁盘缓存（SimpleCache，全局单例） ===
+    // ⚠️ 必须是 single{}，SimpleCache 不允许同一目录有多个实例
+    single<ExoPlayerCache> {
+        ExoPlayerCache(context = AndroidAppContext.context)
+    }
+
+    // === DiskLruCache（供 SegmentCacheTracker SeekBar 可视化使用） ===
+    // ExoPlayer 的 SimpleCache 已接管实际缓存，DiskLruCache 只用于读取缓存状态展示
     single<DiskLruCache> {
         val cacheDir = getDefaultCacheDir(AndroidAppContext.context) + "/video_cache"
         DiskLruCache(cacheDir = cacheDir)
     }
 
-    // === M3U8 Cache Interceptor ===
-    single<M3u8CacheInterceptor> {
-        val cacheDir = getDefaultCacheDir(AndroidAppContext.context) + "/video_cache"
-        M3u8CacheInterceptor(
-            httpClient = get(),
-            diskCache = get(),
-            cacheDir = cacheDir,
-        )
+    // === Segment Cache Tracker（SeekBar 缓存标记可视化） ===
+    single<SegmentCacheTracker> {
+        SegmentCacheTracker(diskCache = get())
     }
 
-    // === Video Player Controller (ExoPlayer) ===
-    single<IPlayerController> {
+    // === Video Player Controller (ExoPlayer + SimpleCache) ===
+    // factory{} 而非 single{}：每次进入播放页创建新实例，退出时 release() 销毁
+    // 同时注册 IPlayerController 接口和 ExoPlayerController 具体类型，
+    // 因为 PlatformVideoPlayerScreen.android.kt 中直接注入 ExoPlayerController 以访问 .player 属性
+    factory<IPlayerController> {
         ExoPlayerController(
             context = AndroidAppContext.context,
-            diskCache = get(),
+            exoCache = get(),
+        )
+    }
+    factory<ExoPlayerController> {
+        ExoPlayerController(
+            context = AndroidAppContext.context,
+            exoCache = get(),
         )
     }
 }

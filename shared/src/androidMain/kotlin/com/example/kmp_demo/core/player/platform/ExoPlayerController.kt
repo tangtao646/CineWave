@@ -10,49 +10,48 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
-import com.example.kmp_demo.core.player.cache.DiskLruCache
-import com.example.kmp_demo.core.player.cache.HybridDataSource
+import com.example.kmp_demo.core.player.cache.ExoPlayerCache
 import com.example.kmp_demo.core.player.domain.IPlayerController
 import com.example.kmp_demo.core.player.domain.VideoPlaybackState
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
 /**
- * 基于 ExoPlayer (Media3) 的原生播放器控制器。
+ * 基于 ExoPlayer (Media3) + SimpleCache 的 Android 原生播放器控制器。
  *
- * 完全替代 [ComposeMediaPlayerController]，直接操作 ExoPlayer API，
- * 不再依赖任何第三方 Compose 播放库。
+ * ## 缓存架构（原生 CacheDataSource 模式）
  *
- * 设计要点：
- * - 播放器实例由本类创建和管理，生命周期绑定到 Controller
- * - 通过 [player] 属性暴露 ExoPlayer 实例，供 [ExoPlayerSurface] 绑定
- * - 位置轮询使用协程，250ms 间隔
- * - 使用 [HybridDataSource] 桥接 KMP 的 [DiskLruCache] 与 ExoPlayer 数据加载
+ * 使用 ExoPlayer 官方推荐的 [CacheDataSource] 方案，完全替代旧的本地 HTTP 代理。
  *
- * 缓存架构（解法A）：
- * - [HybridDataSource] 在每次数据请求时先查询 DiskLruCache
- * - 命中 → 走本地 [OkioDiskCacheDataSource] 流式读取
- * - 未命中 → 无缝回退到 [DefaultHttpDataSource] 原生 HTTP 网络栈
- * - 后台 [M3u8CacheInterceptor] 持续预加载切片到 DiskLruCache
+ * ```
+ * ExoPlayer
+ *   └─ HlsMediaSource
+ *        └─ CacheDataSource.Factory
+ *             ├─ 命中：SimpleCache(磁盘) → 直接读取，零网络请求
+ *             └─ 未命中：DefaultHttpDataSource → CDN，同时写入 SimpleCache
+ * ```
+ *
+ * ## 优势（对比旧代理方案）
+ * - **无端口竞态**：无本地 HTTP 服务器，无异步绑定问题
+ * - **真正流式**：CacheDataSource 逐块写入缓存，同时逐块喂给解码器，首帧延迟最低
+ * - **Range 请求原生支持**：Seek 操作直接命中缓存对应字节范围，无需重下整个切片
+ * - **ExoPlayer 原生集成**：缓存写入由 ExoPlayer 内部调度，不占用额外线程
+ * - **官方维护**：Google 团队维护，稳定性和兼容性有保障
+ *
+ * @param context Android 上下文
+ * @param exoCache ExoPlayer SimpleCache 实例（应用级单例，由 DI 注入）
  */
 @OptIn(UnstableApi::class)
 class ExoPlayerController(
     private val context: Context,
-    private val diskCache: DiskLruCache,
+    private val exoCache: ExoPlayerCache,
 ) : IPlayerController {
 
     companion object {
@@ -63,14 +62,34 @@ class ExoPlayerController(
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var positionPollingJob: Job? = null
 
-    /** 默认的 HTTP 数据源工厂，用于克隆并添加请求头 */
-    private val baseHttpDataSourceFactory = DefaultHttpDataSource.Factory()
-        .setConnectTimeoutMs(8000)
-        .setReadTimeoutMs(8000)
+    // ==================== CacheDataSource 工厂（核心缓存入口） ====================
+
+    /**
+     * HTTP 数据源工厂（上游，仅在缓存未命中时使用）。
+     * 8 秒超时，允许跨协议重定向（http→https）。
+     */
+    private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+        .setConnectTimeoutMs(8_000)
+        .setReadTimeoutMs(8_000)
         .setAllowCrossProtocolRedirects(true)
+
+    /**
+     * 带缓存的数据源工厂（ExoPlayer 实际使用的工厂）。
+     *
+     * [CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR]：
+     * 缓存读取失败时（如磁盘损坏），自动回退到网络，不崩溃。
+     */
+    private val cacheDataSourceFactory = CacheDataSource.Factory()
+        .setCache(exoCache.cache)
+        .setUpstreamDataSourceFactory(httpDataSourceFactory)
+        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+    // ==================== ExoPlayer 实例 ====================
 
     /** 暴露 ExoPlayer 实例，供 [ExoPlayerSurface] 的 AndroidView 绑定 */
     val player: ExoPlayer
+
+    // ==================== 状态 ====================
 
     private val _playbackState = MutableStateFlow(VideoPlaybackState.IDLE)
     override val playbackState: StateFlow<VideoPlaybackState> = _playbackState.asStateFlow()
@@ -91,81 +110,61 @@ class ExoPlayerController(
     override val bufferedPercent: StateFlow<Int> = _bufferedPercent.asStateFlow()
 
     init {
-        // ==================== 构建混合数据源工厂 ====================
-        // 使用基础工厂创建混合数据源工厂
-        val hybridDataSourceFactory = DataSource.Factory {
-            HybridDataSource(
-                diskCache = diskCache,
-                networkDataSource = baseHttpDataSourceFactory.createDataSource()
-            )
-        }
-
-        // 构建 HlsMediaSource 工厂
-        val hlsMediaSourceFactory = HlsMediaSource.Factory(hybridDataSourceFactory)
-
-        val myLoadControl = DefaultLoadControl.Builder()
+        val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                50_000,
-                64_000,
-                2500,
-                5000
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 50_000,
+                /* bufferForPlaybackMs = */ 2_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 5_000,
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-        // 初始化 ExoPlayer
         player = ExoPlayer.Builder(context)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
                     .setUsage(C.USAGE_MEDIA)
                     .build(),
-                true
+                /* handleAudioFocus = */ true
             )
-            .setMediaSourceFactory(hlsMediaSourceFactory) // 🌟 核心注入点
-            .setLoadControl(myLoadControl)
+            // 注入带缓存的 HLS 媒体源工厂
+            .setMediaSourceFactory(HlsMediaSource.Factory(cacheDataSourceFactory))
+            .setLoadControl(loadControl)
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        // 注册播放器监听器
-        // 注意：ExoPlayer 的回调顺序不保证，onPlaybackStateChanged 可能在
-        // onIsPlayingChanged 之后触发，导致 STATE_READY 覆盖 PLAYING 状态。
-        // 因此 onPlaybackStateChanged 中需要结合 isPlaying 来判断最终状态。
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) {
                     _playbackState.value = VideoPlaybackState.PLAYING
                 } else {
-                    // 当播放停止时，根据当前 ExoPlayer 状态决定是 PAUSED 还是其他
-                    val currentState = _playbackState.value
-                    if (currentState == VideoPlaybackState.PLAYING) {
+                    if (_playbackState.value == VideoPlaybackState.PLAYING) {
                         _playbackState.value = VideoPlaybackState.PAUSED
                     }
                 }
             }
 
             override fun onPlaybackStateChanged(state: Int) {
-                val mapped = mapPlaybackState(state)
-                // 如果当前已经是 PLAYING 状态，不要被 STATE_READY 覆盖
-                // 只有当 mapped 不是 READY，或者当前不是 PLAYING 时才更新
+                val mapped = mapExoState(state)
+                // READY 状态不覆盖 PLAYING，避免状态抖动
                 if (mapped != VideoPlaybackState.READY || _playbackState.value != VideoPlaybackState.PLAYING) {
                     _playbackState.value = mapped
                 }
-                Log.d(TAG, "Playback state: $state, mapped: $mapped")
+                Log.d(TAG, "ExoPlayer state=$state → $mapped")
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Log.e(TAG, "Player error: ${error.message}, code: ${error.errorCode}")
+                Log.e(TAG, "Player error: ${error.message} (code=${error.errorCode})")
                 _playbackState.value = VideoPlaybackState.ERROR
             }
         })
 
-        // 同步初始音量
         _volume.value = player.volume
-
-        // 启动位置轮询
         startPositionPolling()
     }
+
+    // ==================== 位置轮询 ====================
 
     private fun startPositionPolling() {
         positionPollingJob?.cancel()
@@ -173,129 +172,116 @@ class ExoPlayerController(
             while (isActive) {
                 try {
                     _currentPosition.value = player.currentPosition
-                    val dur = player.duration.coerceAtLeast(0)
-                    if (dur > 0) {
+                    val dur = player.duration.coerceAtLeast(0L)
+                    if (dur > 0L) {
                         _duration.value = dur
-                        val buffered = player.bufferedPosition
                         _bufferedPercent.value =
-                            ((buffered.toFloat() / dur) * 100).toInt().coerceIn(0, 100)
+                            ((player.bufferedPosition.toFloat() / dur) * 100)
+                                .toInt().coerceIn(0, 100)
                     }
-                } catch (_: Exception) {
-                    // 播放器尚未就绪
-                }
+                } catch (_: Exception) { /* 播放器尚未就绪 */ }
                 delay(POLL_INTERVAL_MS)
             }
         }
     }
 
+    // ==================== IPlayerController ====================
+
     @OptIn(UnstableApi::class)
     override suspend fun open(url: String, headers: Map<String, String>?) {
         _playbackState.value = VideoPlaybackState.BUFFERING
         try {
-            val mediaItem = MediaItem.Builder()
-                .setMediaId(url)
-                .setUri(Uri.parse(url))
-                .build()
-
-            // 创建一个新的 HTTP 数据源工厂以应用请求头
-            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-                .setConnectTimeoutMs(8000)
-                .setReadTimeoutMs(8000)
-                .setAllowCrossProtocolRedirects(true)
-
-            if (!headers.isNullOrEmpty()) {
-                // 注意：Media3 中设置默认请求头的方法
-                httpDataSourceFactory.setDefaultRequestProperties(headers)
+            // 如果有自定义请求头，重建上游工厂（SimpleCache 不感知 headers，只透传给上游）
+            val factory = if (!headers.isNullOrEmpty()) {
+                val headersFactory = DefaultHttpDataSource.Factory()
+                    .setConnectTimeoutMs(8_000)
+                    .setReadTimeoutMs(8_000)
+                    .setAllowCrossProtocolRedirects(true)
+                    .setDefaultRequestProperties(headers)
+                CacheDataSource.Factory()
+                    .setCache(exoCache.cache)
+                    .setUpstreamDataSourceFactory(headersFactory)
+                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+            } else {
+                cacheDataSourceFactory
             }
 
-            // 构建包含缓存逻辑的复合数据源工厂
-            val hybridDataSourceFactory = DataSource.Factory {
-                HybridDataSource(
-                    diskCache = diskCache,
-                    networkDataSource = httpDataSourceFactory.createDataSource()
+            val mediaSource = HlsMediaSource.Factory(factory)
+                .createMediaSource(
+                    MediaItem.Builder()
+                        .setUri(Uri.parse(url))
+                        .setMediaId(url)
+                        .build()
                 )
-            }
-
-            // 创建 HLS 媒体资源
-            val mediaSource = HlsMediaSource.Factory(hybridDataSourceFactory)
-                .createMediaSource(mediaItem)
 
             player.setMediaSource(mediaSource)
             player.prepare()
             player.play()
+            Log.d(TAG, "Opening: $url")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to open URL: ${e.message}")
+            Log.e(TAG, "Failed to open: ${e.message}")
             _playbackState.value = VideoPlaybackState.ERROR
         }
     }
 
     override suspend fun play() {
         try {
-            if (player.playbackState == Player.STATE_IDLE) {
-                player.prepare()
-            }
+            if (player.playbackState == Player.STATE_IDLE) player.prepare()
             player.play()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to play: ${e.message}")
+            Log.e(TAG, "play() error: ${e.message}")
         }
     }
 
     override suspend fun pause() {
-        try {
-            player.pause()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to pause: ${e.message}")
+        try { player.pause() } catch (e: Exception) {
+            Log.e(TAG, "pause() error: ${e.message}")
         }
     }
 
     override suspend fun togglePlayPause() {
         try {
-            if (player.isPlaying) {
-                player.pause()
-            } else {
-                if (player.playbackState == Player.STATE_IDLE) {
-                    player.prepare()
-                }
+            if (player.isPlaying) player.pause()
+            else {
+                if (player.playbackState == Player.STATE_IDLE) player.prepare()
                 player.play()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to toggle play/pause: ${e.message}")
+            Log.e(TAG, "togglePlayPause() error: ${e.message}")
         }
     }
 
     override suspend fun seekTo(positionMs: Long) {
-        try {
-            player.seekTo(positionMs)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to seek: ${e.message}")
+        try { player.seekTo(positionMs) } catch (e: Exception) {
+            Log.e(TAG, "seekTo() error: ${e.message}")
         }
     }
 
     override suspend fun seekForward(seconds: Long) {
         try {
             val newPos = (player.currentPosition + seconds * 1000)
-                .coerceAtMost(player.duration.coerceAtLeast(0))
+                .coerceAtMost(player.duration.coerceAtLeast(0L))
             player.seekTo(newPos)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to seek forward: ${e.message}")
+            Log.e(TAG, "seekForward() error: ${e.message}")
         }
     }
 
     override suspend fun seekBackward(seconds: Long) {
         try {
-            val newPos = (player.currentPosition - seconds * 1000).coerceAtLeast(0)
+            val newPos = (player.currentPosition - seconds * 1000).coerceAtLeast(0L)
             player.seekTo(newPos)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to seek backward: ${e.message}")
+            Log.e(TAG, "seekBackward() error: ${e.message}")
         }
     }
 
     override suspend fun setVolume(volume: Float) {
         try {
-            player.volume = volume
+            player.volume = volume.coerceIn(0f, 1f)
             _volume.value = volume
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to set volume: ${e.message}")
+            Log.e(TAG, "setVolume() error: ${e.message}")
         }
     }
 
@@ -307,15 +293,14 @@ class ExoPlayerController(
         positionPollingJob?.cancel()
         scope.cancel()
         player.release()
+        // 注意：exoCache.release() 由 Koin single{} 在 Application 销毁时调用，此处不调用
     }
 
-    private fun mapPlaybackState(state: Int): VideoPlaybackState {
-        return when (state) {
-            Player.STATE_IDLE -> VideoPlaybackState.IDLE
-            Player.STATE_BUFFERING -> VideoPlaybackState.BUFFERING
-            Player.STATE_READY -> VideoPlaybackState.READY
-            Player.STATE_ENDED -> VideoPlaybackState.ENDED
-            else -> VideoPlaybackState.IDLE
-        }
+    private fun mapExoState(state: Int): VideoPlaybackState = when (state) {
+        Player.STATE_IDLE -> VideoPlaybackState.IDLE
+        Player.STATE_BUFFERING -> VideoPlaybackState.BUFFERING
+        Player.STATE_READY -> VideoPlaybackState.READY
+        Player.STATE_ENDED -> VideoPlaybackState.ENDED
+        else -> VideoPlaybackState.IDLE
     }
 }
