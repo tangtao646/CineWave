@@ -33,40 +33,32 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import com.example.kmp_demo.core.player.cache.DiskLruCache
-import com.example.kmp_demo.core.player.cache.M3u8CacheInterceptor
+import com.example.kmp_demo.core.network.createHttpClient
+import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.LocalFullscreenController
 import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 import com.example.kmp_demo.core.player.platform.ExoPlayerController
-import com.example.kmp_demo.core.player.platform.getDefaultCacheDir
-import com.example.kmp_demo.core.network.createHttpClient
-import io.github.kdroidfilter.composemediaplayer.VideoPlayerState
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 /**
  * Android 平台统一的视频播放器屏幕实现。
  *
- *
- * 设计要点：
- * - 使用 [ExoPlayerController] 直接管理 ExoPlayer，不依赖任何第三方 Compose 播放库
- * - 使用 [VideoPlayerSurface]（AndroidView + PlayerView）渲染视频画面
- * - 全屏切换通过 [AndroidFullscreenController] 原生实现，不再受 ComposeMediaPlayer 限制
- * - 控制栏、手势、顶栏等 UI 完全由 Compose 实现
- * - 缓存系统（DiskLruCache + M3u8CacheInterceptor）保持独立
+ * ## 缓存架构
+ * 使用 ExoPlayer 原生 SimpleCache + CacheDataSource 方案，
+ * 无需本地 HTTP 代理，无端口竞态，真正流式缓存。
  *
  * @param url 视频播放地址
  * @param title 视频标题
  * @param onBack 返回回调
  * @param headers 自定义请求头
- * @param controls 自定义控制栏（为 null 时使用默认 VideoPlayerControls）
- * @param topBar 自定义顶栏（为 null 时使用默认返回+标题顶栏）
+ * @param controls 自定义控制栏
+ * @param topBar 自定义顶栏
  * @param onFullScreenChange 全屏状态变化回调
  */
 @Composable
@@ -83,35 +75,26 @@ fun AndroidVideoPlayerScreen(
     topBar: @Composable (BoxScope.() -> Unit)? = null,
     onFullScreenChange: ((Boolean) -> Unit)? = null,
 ) {
-    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val fullscreenController = LocalFullscreenController.current
 
-    // ========== 缓存系统初始化 ==========
-    val resolvedCacheDir = "${getDefaultCacheDir(context)}/video_cache"
-    val diskCache = remember { DiskLruCache(resolvedCacheDir) }
-    val httpClient = remember { createHttpClient() }
+    // ========== 从 Koin 获取（由 DI 管理生命周期） ==========
+    val controller: ExoPlayerController = koinInject()
+    val segmentCacheTracker: SegmentCacheTracker = koinInject()
 
     // ========== 分享链接解析器 ==========
+    val httpClient = remember { createHttpClient() }
     val shareUrlResolver = remember(httpClient) { ShareUrlResolver(httpClient) }
 
-    val interceptor = remember {
-        M3u8CacheInterceptor(
-            httpClient = httpClient,
-            diskCache = diskCache,
-            cacheDir = resolvedCacheDir
+    // ========== 播放器管理器（无代理服务器） ==========
+    val manager = remember(controller, segmentCacheTracker) {
+        VideoPlayerManager(
+            controller = controller,
+            proxyServer = null,          // Android 使用 SimpleCache，无需代理
+            segmentCacheTracker = segmentCacheTracker,
         )
     }
-
-    // ========== 播放器控制器（注入 HybridDataSource） ==========
-    val controller = remember(diskCache) { ExoPlayerController(context, diskCache) }
-    val manager = remember(controller) {
-        VideoPlayerManager(controller)
-    }
     val uiState by manager.uiState.collectAsState()
-
-    // S11: 收集缓存进度（可选 UI 展示）
-    val cacheProgress by interceptor.cacheProgress.collectAsState()
 
     // ========== 打开视频 ==========
     LaunchedEffect(url, headers) {
@@ -121,22 +104,15 @@ fun AndroidVideoPlayerScreen(
 
     // ========== 全屏处理 ==========
     LaunchedEffect(uiState.isFullScreen) {
-        if (uiState.isFullScreen) {
-            fullscreenController.enterFullscreen()
-        } else {
-            fullscreenController.exitFullscreen()
-        }
+        if (uiState.isFullScreen) fullscreenController.enterFullscreen()
+        else fullscreenController.exitFullscreen()
         onFullScreenChange?.invoke(uiState.isFullScreen)
     }
 
     // ========== 返回键处理 ==========
     BackHandler {
         if (uiState.isFullScreen) {
-            handlePlayerAction(
-                manager,
-                PlayerAction.ToggleFullScreen,
-                coroutineScope = coroutineScope
-            )
+            handlePlayerAction(manager, PlayerAction.ToggleFullScreen, coroutineScope = coroutineScope)
         } else {
             onBack()
         }
@@ -146,18 +122,17 @@ fun AndroidVideoPlayerScreen(
     val currentView = LocalView.current
     DisposableEffect(Unit) {
         currentView.keepScreenOn = true
-        onDispose {
-            currentView.keepScreenOn = false
-        }
+        onDispose { currentView.keepScreenOn = false }
     }
 
     // ========== 释放资源 ==========
     DisposableEffect(manager) {
         onDispose {
             fullscreenController.exitFullscreen()
-            interceptor.stop()
             httpClient.close()
+            segmentCacheTracker.release()
             manager.release()
+            // 注意：ExoPlayerCache(SimpleCache) 由 Koin single{} 管理，此处不释放
         }
     }
 
@@ -180,31 +155,19 @@ fun AndroidVideoPlayerScreen(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = {
-                            handlePlayerAction(
-                                manager,
-                                PlayerAction.ToggleControls,
-                                coroutineScope = coroutineScope
-                            )
+                            handlePlayerAction(manager, PlayerAction.ToggleControls, coroutineScope = coroutineScope)
                         },
                         onDoubleTap = {
-                            handlePlayerAction(
-                                manager,
-                                PlayerAction.TogglePlayPause,
-                                coroutineScope = coroutineScope
-                            )
+                            handlePlayerAction(manager, PlayerAction.TogglePlayPause, coroutineScope = coroutineScope)
                         }
                     )
                 }
         ) {
-            // 中央大按钮（播放/暂停 + 缓冲指示），固定在覆盖层正中央，不受 controls 显隐影响
+            // 中央大按钮
             CenterPlayButton(
                 state = uiState,
                 onClick = {
-                    handlePlayerAction(
-                        manager,
-                        PlayerAction.TogglePlayPause,
-                        coroutineScope = coroutineScope
-                    )
+                    handlePlayerAction(manager, PlayerAction.TogglePlayPause, coroutineScope = coroutineScope)
                 },
                 modifier = Modifier.align(Alignment.Center)
             )
@@ -230,28 +193,16 @@ fun AndroidVideoPlayerScreen(
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onTap = {
-                                    handlePlayerAction(
-                                        manager,
-                                        PlayerAction.ToggleControls,
-                                        coroutineScope = coroutineScope
-                                    )
+                                    handlePlayerAction(manager, PlayerAction.ToggleControls, coroutineScope = coroutineScope)
                                 },
                                 onDoubleTap = {
-                                    handlePlayerAction(
-                                        manager,
-                                        PlayerAction.TogglePlayPause,
-                                        coroutineScope = coroutineScope
-                                    )
+                                    handlePlayerAction(manager, PlayerAction.TogglePlayPause, coroutineScope = coroutineScope)
                                 }
                             )
                         }
                 ) {
                     controls(uiState) { action ->
-                        handlePlayerAction(
-                            manager,
-                            action,
-                            coroutineScope = coroutineScope
-                        )
+                        handlePlayerAction(manager, action, coroutineScope = coroutineScope)
                     }
                 }
             }
@@ -275,11 +226,7 @@ fun AndroidVideoPlayerScreen(
                         )
                         .clickable(enabled = true) {
                             if (uiState.isFullScreen) {
-                                handlePlayerAction(
-                                    manager,
-                                    PlayerAction.ToggleFullScreen,
-                                    coroutineScope = coroutineScope
-                                )
+                                handlePlayerAction(manager, PlayerAction.ToggleFullScreen, coroutineScope = coroutineScope)
                             } else {
                                 onBack()
                             }
@@ -292,11 +239,7 @@ fun AndroidVideoPlayerScreen(
                             title = title,
                             onBack = {
                                 if (uiState.isFullScreen) {
-                                    handlePlayerAction(
-                                        manager,
-                                        PlayerAction.ToggleFullScreen,
-                                        coroutineScope = coroutineScope
-                                    )
+                                    handlePlayerAction(manager, PlayerAction.ToggleFullScreen, coroutineScope = coroutineScope)
                                 } else {
                                     onBack()
                                 }
@@ -314,8 +257,8 @@ fun AndroidVideoPlayerScreen(
 internal fun handlePlayerAction(
     manager: VideoPlayerManager,
     action: PlayerAction,
-    diskCache: DiskLruCache? = null,
-    playerState: VideoPlayerState? = null,
+    diskCache: com.example.kmp_demo.core.player.cache.DiskLruCache? = null,
+    playerState: io.github.kdroidfilter.composemediaplayer.VideoPlayerState? = null,
     coroutineScope: CoroutineScope? = null,
 ) {
     when (action) {
@@ -332,17 +275,13 @@ internal fun handlePlayerAction(
             playerState?.let { state ->
                 if (state.isPipSupported) {
                     val scope = coroutineScope ?: GlobalScope
-                    scope.launch {
-                        state.enterPip()
-                    }
+                    scope.launch { state.enterPip() }
                 }
             }
         }
         PlayerAction.ToggleControls -> manager.toggleControls()
         PlayerAction.ClearCache -> {
-            GlobalScope.launch(Dispatchers.IO) {
-                diskCache?.clear()
-            }
+            // SimpleCache 清理：由用户在设置页手动触发，此处保留接口
         }
     }
 }

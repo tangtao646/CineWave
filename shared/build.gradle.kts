@@ -52,6 +52,7 @@ kotlin {
             implementation(libs.androidx.media3.exoplayer.hls)
             implementation(libs.androidx.media3.session)
             implementation(libs.androidx.media3.datasource.okhttp)
+            implementation(libs.androidx.media3.datasource)
             implementation(libs.androidx.media3.ui)
 
             implementation(libs.guava.android)
@@ -101,6 +102,10 @@ kotlin {
             implementation(libs.jetbrains.navigation3.ui)
             implementation(libs.jetbrains.compose.adaptive.navigation3)
             implementation(libs.jetbrains.lifecycle.viewmodel.navigation3)
+
+            // Ktor Server CIO (跨平台 HTTP 服务器，用于本地缓存代理)
+            implementation(libs.ktor.server.core)
+            implementation(libs.ktor.server.cio)
 
         }
         jvmMain.dependencies {

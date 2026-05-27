@@ -25,8 +25,17 @@ import okio.buffer
  * 性能与内存安全：
  * - 所有全量 ByteArray 方法（get/put）标记为 @Deprecated，引导使用流式方法
  * - putStream 使用 Okio BufferedSink + emit() 确保数据落盘
- * - evictIfNeeded 在锁外排序，最小化锁持有时间
+ * - evictIfNeeded 在锁内完成（但 IO 写入已在锁外完成）
  * - scanCurrentSize 延迟到首次使用时执行，不阻塞构造
+ *
+ * ## 锁优化（Bug 3 修复）
+ *
+ * 旧版本：getSource() 在 mutex.withLock 内执行文件读取，阻塞所有写入路径。
+ * 新版本：Mutex 仅保护元数据（currentSize、路径映射），IO 操作移到锁外。
+ *
+ * - getSource(): 锁外执行文件读取，锁内仅做存在性检查
+ * - putStream(): IO 写入在锁外执行，仅元数据更新在锁内
+ * - contains(): 使用 tryLock 避免在非协程上下文中阻塞
  *
  * @param cacheDir 缓存目录路径（如 /data/data/.../cache/video_cache/）
  * @param maxSizeBytes 最大缓存大小，默认 5GB
@@ -71,21 +80,31 @@ class DiskLruCache(
     /**
      * 流式获取缓存文件，返回 Okio [Source]，避免一次性加载 ByteArray 导致 OOM。
      *
+     * ## 锁优化
+     *
+     * 旧版本：整个方法在 mutex.withLock 内执行，文件读取期间阻塞所有写入路径。
+     * 新版本：Mutex 仅保护存在性检查和元数据更新，文件读取在锁外执行。
+     *
      * 读取后异步触发轻量级时间戳更新（[touchFile]），绝不阻塞本次读取。
      *
      * @param key 缓存键（通常是 URL）
      * @return Okio Source，调用方需自行 close()；缓存不存在时返回 null
      */
-    suspend fun getSource(key: String): Source? = mutex.withLock {
-        val path = keyToPath(key)
-        if (!fileSystem.exists(path)) return@withLock null
+    suspend fun getSource(key: String): Source? {
+        // 仅在锁内做存在性检查（极短操作）
+        val path = mutex.withLock {
+            val p = keyToPath(key)
+            if (!fileSystem.exists(p)) return@withLock null
+            p
+        } ?: return null
 
+        // 文件读取在锁外执行，不阻塞写入路径
         // 异步触发轻量级时间戳更新，绝不阻塞本次读取
         scope.launch {
             touchFile(path)
         }
 
-        fileSystem.source(path)
+        return fileSystem.source(path)
     }
 
     /**
@@ -97,29 +116,37 @@ class DiskLruCache(
      * 3. 更新 currentSize
      * 4. 触发惰性淘汰检查
      *
+     * ## 锁优化（Bug 3 修复）
+     *
+     * 旧版本：整个方法在 mutex.withLock 内执行，网络 IO 写入期间阻塞所有读取路径。
+     * 新版本：IO 写入在 Mutex 外执行，仅元数据更新在锁内。
+     *
      * block 是 suspend 函数，允许调用方在写入前执行挂起操作（如网络读取），
      * 但写入 Sink 本身是同步操作，不会阻塞协程调度器。
      *
      * @param key 缓存键（通常是 URL）
      * @param block 接收 [Sink] 的回调，在此回调中执行写入操作
      */
-    suspend fun putStream(key: String, block: suspend (Sink) -> Unit) = mutex.withLock {
+    suspend fun putStream(key: String, block: suspend (Sink) -> Unit) {
         val path = keyToPath(key)
         val tmpPath = cacheDir.toOkioPath() / "${path.name}.tmp"
 
+        // ── IO 写入在 Mutex 外执行，避免长时间持锁阻塞读取路径 ──
         val sink = fileSystem.sink(tmpPath).buffer()
         sink.use { bufferedSink ->
             block(bufferedSink)
             bufferedSink.emit()
         }
 
-        if (fileSystem.exists(path)) {
-            currentSize -= fileSystem.metadataOrNull(path)?.size ?: 0L
+        // ── 仅元数据更新在 Mutex 内 ──
+        mutex.withLock {
+            if (fileSystem.exists(path)) {
+                currentSize -= fileSystem.metadataOrNull(path)?.size ?: 0L
+            }
+            fileSystem.atomicMove(tmpPath, path)
+            currentSize += fileSystem.metadataOrNull(path)?.size ?: 0L
+            checkAndEvict()
         }
-        fileSystem.atomicMove(tmpPath, path)
-        currentSize += fileSystem.metadataOrNull(path)?.size ?: 0L
-
-        checkAndEvict()
     }
 
     // ==================== ByteArray 方法（保留向后兼容，但不推荐） ====================
@@ -241,13 +268,14 @@ class DiskLruCache(
     /**
      * LRU 淘汰：当总大小超过上限时，删除最早访问的文件。
      *
-     * 性能优化：在锁外完成排序（通过快照），最小化锁持有时间。
+     * 性能优化：在锁内完成排序（文件列表快照），但 IO 删除操作在锁内执行。
+     * 由于淘汰操作不频繁（每 30 秒检查一次），锁持有时间可接受。
      */
     private suspend fun evictIfNeeded() = mutex.withLock {
         if (!sizeInitialized) return@withLock
         if (currentSize <= maxSizeBytes) return@withLock
 
-        // 在锁内获取文件列表快照，但排序在锁外完成
+        // 在锁内获取文件列表快照并排序
         val files = fileSystem.list(cacheDir.toOkioPath())
             .filter { !it.name.endsWith(".tmp") }
             .map { path -> path to (fileSystem.metadataOrNull(path)?.lastModifiedAtMillis ?: 0L) }

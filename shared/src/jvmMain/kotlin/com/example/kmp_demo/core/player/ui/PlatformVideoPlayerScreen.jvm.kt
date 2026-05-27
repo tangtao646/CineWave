@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import com.example.kmp_demo.core.player.cache.CacheProxyServer
+import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.IPlayerController
 import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
@@ -56,7 +58,15 @@ actual fun PlatformVideoPlayerScreen(
     onFullScreenChange: ((Boolean) -> Unit)?,
 ) {
     val controller: IPlayerController = koinInject()
-    val manager = remember(controller) { VideoPlayerManager(controller) }
+    val proxyServer: CacheProxyServer = koinInject()
+    val segmentCacheTracker: SegmentCacheTracker = koinInject()
+    val manager = remember(controller, proxyServer, segmentCacheTracker) {
+        VideoPlayerManager(
+            controller = controller,
+            proxyServer = proxyServer,
+            segmentCacheTracker = segmentCacheTracker,
+        )
+    }
     val uiState by manager.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 

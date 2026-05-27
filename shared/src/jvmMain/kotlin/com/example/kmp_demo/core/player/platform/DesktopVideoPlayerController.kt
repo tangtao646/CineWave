@@ -2,6 +2,8 @@ package com.example.kmp_demo.core.player.platform
 
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import com.example.kmp_demo.core.player.cache.CacheProxyServer
+import com.example.kmp_demo.core.player.cache.DebugLog
 import com.example.kmp_demo.core.player.domain.IPlayerController
 import com.example.kmp_demo.core.player.domain.VideoPlaybackState
 import kotlinx.coroutines.*
@@ -39,7 +41,8 @@ import java.nio.ByteBuffer
  * @see CallbackVideoSurface
  */
 class DesktopVideoPlayerController(
-    private val mediaPlayerFactory: MediaPlayerFactory
+    private val mediaPlayerFactory: MediaPlayerFactory,
+    private val proxyServer: CacheProxyServer? = null,
 ) : IPlayerController {
 
     companion object {
@@ -199,9 +202,16 @@ class DesktopVideoPlayerController(
     // ==================== IPlayerController 实现 ====================
 
     override suspend fun open(url: String, headers: Map<String, String>?) {
+        DebugLog.d("DesktopVideoPlayerController", "open() called, url=$url")
         _playbackState.value = VideoPlaybackState.BUFFERING
         _currentPosition.value = 0L
+
+        // 注意：VideoPlayerManager.open() 已经调用了 proxyServer.start() 和 getProxiedM3u8Url()，
+        // 所以这里收到的 url 已经是代理 URL（或原始 URL 如果代理不可用）。
+        // 不再重复调用 proxyServer.start() 和 getProxiedM3u8Url()，避免 URL 双重编码。
+        DebugLog.d("DesktopVideoPlayerController", "Playing URL: $url")
         mediaPlayer.media().play(url)
+        DebugLog.d("DesktopVideoPlayerController", "mediaPlayer.media().play() returned")
     }
 
     override suspend fun play() {
@@ -246,6 +256,14 @@ class DesktopVideoPlayerController(
 
     override fun release() {
         stopPositionPolling()
+
+        // 停止代理服务器（使用 NonCancellable 确保执行）
+        runBlocking(NonCancellable) {
+            try {
+                proxyServer?.stop()
+            } catch (_: Exception) { }
+        }
+
         scope.cancel()
 
         // 安全释放 VLCJ 资源

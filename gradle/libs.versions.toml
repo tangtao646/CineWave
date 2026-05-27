@@ -31,7 +31,7 @@ composeMediaPlayer = "0.10.0"
 coilNetworkKtor3 = "3.2.0"
 composeUiTest = "1.8.2"
 okio = "3.9.0"
-media3Ui = "1.10.1"
+media3Ui = "1.5.1"
 kotlinx-coroutines = "1.11.0"
 
 navigationCommonAndroid = "2.9.0"
@@ -69,8 +69,9 @@ compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMul
 compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "composeMultiplatform" }
 compose-uiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }
 
-# Ktor Server (JVM only, for local cache proxy)
+# Ktor Server (for local cache proxy)
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
+ktor-server-cio = { module = "io.ktor:ktor-server-cio", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
 
 # Kotlinx Serialization
@@ -128,6 +129,7 @@ androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", versi
 androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3" }
 androidx-media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3" }
+androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3" }
 
 # Guava (ListenableFuture)
 guava-android = { module = "com.google.guava:guava", version.ref = "guava" }
