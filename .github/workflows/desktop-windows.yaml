@@ -19,12 +19,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Inject db.json from GitHub Secrets
+      - name: Inject secrets from GitHub Secrets
         shell: bash
         run: |
           echo "🔐 Decoding DB_JSON secret into composeResources/files/db.json..."
           echo "${{ secrets.DB_JSON }}" | base64 -d > shared/src/commonMain/composeResources/files/db.json
           echo "✅ db.json injected successfully ($(wc -c < shared/src/commonMain/composeResources/files/db.json) bytes)"
+          echo "🔐 Injecting TMDB_API_KEY into composeResources/files/tmdb_api_key.txt..."
+          echo "${{ secrets.TMDB_API_KEY }}" > shared/src/commonMain/composeResources/files/tmdb_api_key.txt
+          echo "✅ tmdb_api_key.txt injected successfully ($(wc -c < shared/src/commonMain/composeResources/files/tmdb_api_key.txt) bytes)"
 
       - name: Setup JDK 11
         uses: actions/setup-java@v4
