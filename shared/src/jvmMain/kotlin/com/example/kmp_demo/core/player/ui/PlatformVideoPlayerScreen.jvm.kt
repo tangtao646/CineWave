@@ -212,6 +212,15 @@ private fun handleDesktopPlayerAction(
         PlayerAction.ToggleFullScreen -> manager.toggleFullScreen()
         PlayerAction.ToggleControls -> manager.toggleControls()
         PlayerAction.TogglePip -> { /* Desktop 不支持画中画 */ }
+        is PlayerAction.SetVolume -> manager.setVolume(action.volume)
+        PlayerAction.ToggleMute -> {
+            val currentVolume = manager.uiState.value.volume
+            if (currentVolume > 0f) {
+                manager.setVolume(0f)
+            } else {
+                manager.setVolume(1.0f)
+            }
+        }
         PlayerAction.ClearCache -> { /* Desktop 不使用磁盘缓存 */ }
     }
 }

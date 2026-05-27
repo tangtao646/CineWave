@@ -20,3 +20,4 @@ actual fun openAccessibilitySettings() {
 actual fun PlatformContext.getPlatformCachePath(): String {
     return this.cacheDir.absolutePath
 }
+
