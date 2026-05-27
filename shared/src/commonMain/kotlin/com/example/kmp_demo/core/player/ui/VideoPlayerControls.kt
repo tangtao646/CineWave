@@ -31,8 +31,15 @@ import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 /**
  * 视频播放器控制栏组件
  *
- * 包含：播放/暂停、快进/快退、进度条、时间显示、选集按钮、全屏切换
+ * 包含：播放/暂停、快进/快退、进度条、时间显示、音量控制、选集按钮、全屏切换
  * 纯 UI 组件，所有状态通过 [state] 传入，事件通过 [onAction] 回调上报。
+ *
+ * 控制栏元素的显隐策略：
+ * - **桌面端**：所有控制元素始终展示（播放控制、音量控制、选集按钮、全屏切换）
+ * - **移动端竖屏**：隐藏音量控制和选集按钮（空间紧凑），仅保留播放控制和全屏切换
+ * - **移动端横屏**：展示所有控制元素
+ *
+ * 竖屏状态通过 [LocalIsPortrait] CompositionLocal 获取，由各平台层设置。
  *
  * @param showEpisodeSelector 是否显示选集按钮（剧集模式为 true，电影模式为 false）
  * @param currentEpisodeLabel 当前剧集标签，如"第3集"，显示在选集按钮上
@@ -54,6 +61,16 @@ fun VideoPlayerControls(
         inactiveTrackColor = Color.White.copy(alpha = 0.3f)
     )
 ) {
+    // 记住上一次非静音的音量值，用于静音切换
+    var previousVolume by remember { mutableStateOf(1.0f) }
+
+    // 竖屏模式下隐藏音量控制和选集按钮（移动端空间紧凑）
+    val isPortrait = LocalIsPortrait.current
+    val effectiveShowVolumeControl = !isPortrait
+    val effectiveShowEpisodeSelector = showEpisodeSelector && !isPortrait
+
+
+
     Box(modifier = modifier) {
         // 底部控制栏
         Column(
@@ -82,63 +99,92 @@ fun VideoPlayerControls(
             Spacer(modifier = Modifier.height(4.dp))
 
             // 底部按钮行
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // 使用 Box + Alignment.Center 确保播放控制按钮组始终水平居中，
+            // 不受左右两侧内容（时间、音量、选集、全屏）宽度变化的影响。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
             ) {
-                // 时间显示
-                Text(
-                    text = "${state.currentPositionText} / ${state.durationText}",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(start = 4.dp)
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // 快退
-                if (showSeekButtons) {
-                    PlayerIconButton(
-                        icon = Icons.Default.Replay10,
-                        contentDescription = "快退 10 秒",
-                        onClick = { onAction(PlayerAction.SeekBackward(10)) }
+                // 左侧：时间显示 + 音量控制
+                Row(
+                    modifier = Modifier.align(Alignment.CenterStart),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${state.currentPositionText} / ${state.durationText}",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 4.dp)
                     )
+
+                    if (effectiveShowVolumeControl) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        VolumeControl(
+                            volume = state.volume,
+                            onVolumeChange = { volume ->
+                                onAction(PlayerAction.SetVolume(volume))
+                            },
+                            onToggleMute = {
+                                if (state.volume > 0f) {
+                                    previousVolume = state.volume
+                                    onAction(PlayerAction.SetVolume(0f))
+                                } else {
+                                    onAction(PlayerAction.SetVolume(previousVolume))
+                                }
+                            },
+                        )
+                    }
                 }
 
-                // 播放/暂停
-                PlayerIconButton(
-                    icon = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (state.isPlaying) "暂停" else "播放",
-                    iconSize = 32.dp,
-                    onClick = { onAction(PlayerAction.TogglePlayPause) }
-                )
+                // 居中：快退 — 播放/暂停 — 快进（始终水平居中）
+                Row(
+                    modifier = Modifier.align(Alignment.Center),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (showSeekButtons) {
+                        PlayerIconButton(
+                            icon = Icons.Default.Replay10,
+                            contentDescription = "快退 10 秒",
+                            onClick = { onAction(PlayerAction.SeekBackward(10)) }
+                        )
+                    }
 
-                // 快进
-                if (showSeekButtons) {
                     PlayerIconButton(
-                        icon = Icons.Default.Forward10,
-                        contentDescription = "快进 10 秒",
-                        onClick = { onAction(PlayerAction.SeekForward(10)) }
+                        icon = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (state.isPlaying) "暂停" else "播放",
+                        iconSize = 32.dp,
+                        onClick = { onAction(PlayerAction.TogglePlayPause) }
                     )
+
+                    if (showSeekButtons) {
+                        PlayerIconButton(
+                            icon = Icons.Default.Forward10,
+                            contentDescription = "快进 10 秒",
+                            onClick = { onAction(PlayerAction.SeekForward(10)) }
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
+                // 右侧：选集按钮 + 全屏切换
+                Row(
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (effectiveShowEpisodeSelector && onEpisodeSelectorClick != null) {
+                        PlayerTextButton(
+                            label = "选集",
+                            onClick = onEpisodeSelectorClick,
+                        )
+                    }
 
-                // 选集按钮（位于全屏按钮左侧）
-                if (showEpisodeSelector && onEpisodeSelectorClick != null) {
-                    PlayerTextButton(
-                        label = "选集",
-                        onClick = onEpisodeSelectorClick,
-                    )
-                }
-
-                // 全屏切换
-                if (showFullScreenButton) {
-                    PlayerIconButton(
-                        icon = if (state.isFullScreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                        contentDescription = if (state.isFullScreen) "退出全屏" else "全屏",
-                        onClick = { onAction(PlayerAction.ToggleFullScreen) }
-                    )
+                    if (showFullScreenButton) {
+                        PlayerIconButton(
+                            icon = if (state.isFullScreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                            contentDescription = if (state.isFullScreen) "退出全屏" else "全屏",
+                            onClick = { onAction(PlayerAction.ToggleFullScreen) }
+                        )
+                    }
                 }
             }
         }
@@ -307,6 +353,82 @@ private fun PlayerIconButton(
 }
 
 /**
+ * 音量控制组件 — 横向滑块 + 音量图标 + 百分比显示。
+ *
+ * 布局：音量图标 | 百分比文本 | 横向滑块
+ * - 点击图标切换静音/恢复
+ * - 拖动滑块调节音量
+ * - 滑块宽度固定，不占用过多空间
+ *
+ * @param volume 当前音量 0.0 ~ 1.0
+ * @param onVolumeChange 音量变化回调
+ * @param onToggleMute 静音切换回调
+ */
+@Composable
+private fun VolumeControl(
+    volume: Float,
+    onVolumeChange: (Float) -> Unit,
+    onToggleMute: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.width(140.dp)
+    ) {
+        // 音量图标（点击切换静音）
+        IconButton(
+            onClick = onToggleMute,
+            modifier = Modifier.size(24.dp)
+        ) {
+            Icon(
+                imageVector = getVolumeIcon(volume),
+                contentDescription = if (volume > 0f) "静音" else "取消静音",
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        // 百分比文本
+        Text(
+            text = "${(volume * 100).toInt()}%",
+            color = Color.White,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(horizontal = 2.dp),
+            maxLines = 1,
+        )
+
+        // 音量滑块
+        Slider(
+            value = volume,
+            onValueChange = onVolumeChange,
+            valueRange = 0f..1f,
+            modifier = Modifier
+                .width(72.dp)
+                .height(20.dp),
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = Color(0xFFFF4444),
+                inactiveTrackColor = Color.White.copy(alpha = 0.3f),
+            ),
+        )
+    }
+}
+
+/**
+ * 根据音量值返回对应的图标。
+ *
+ * - volume == 0f → VolumeOff（静音）
+ * - volume < 0.5f → VolumeDown（低音量）
+ * - volume >= 0.5f → VolumeUp（高音量）
+ */
+private fun getVolumeIcon(volume: Float): ImageVector {
+    return when {
+        volume <= 0f -> Icons.Default.VolumeOff
+        volume < 0.5f -> Icons.Default.VolumeDown
+        else -> Icons.Default.VolumeUp
+    }
+}
+
+/**
  * 播放器文字按钮（用于选集等场景）。
  *
  * 显示为带圆角背景的标签文本，比图标按钮更直观地表达当前剧集信息。
@@ -346,6 +468,10 @@ sealed interface PlayerAction {
     data object ToggleFullScreen : PlayerAction
     data object TogglePip : PlayerAction
     data object ToggleControls : PlayerAction
+    /** 设置音量 0.0 ~ 1.0 */
+    data class SetVolume(val volume: Float) : PlayerAction
+    /** 切换静音（在 0 和上次音量之间切换） */
+    data object ToggleMute : PlayerAction
     /** 清除磁盘缓存 */
     data object ClearCache : PlayerAction
 }
