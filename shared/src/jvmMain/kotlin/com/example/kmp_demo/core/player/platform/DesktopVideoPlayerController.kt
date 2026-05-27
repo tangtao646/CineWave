@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
+import uk.co.caprica.vlcj.media.MediaRef
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer
@@ -24,21 +25,9 @@ import java.nio.ByteBuffer
 
 /**
  * Desktop 视频播放器 — 基于 VLCJ (libvlc) 的 CallbackVideoSurface 渲染。
- *
- * ## 为什么在 macOS 上使用 CallbackVideoSurface？
- * 1. **解决窗口脱离问题**：macOS 上的 AWT 不支持将 VLC 直接渲染到 Canvas，默认使用窗口叠加（Window Overlay），
- *    会导致视频窗口脱离 Compose 窗口或始终置顶遮挡 UI。
- * 2. **Compose 完美集成**：通过帧回调获取像素数据并转换为 [ImageBitmap]，使视频像普通 Compose 组件一样渲染，
- *    支持在视频上方放置任何 Compose UI（如控制条、字幕）。
- * 3. **硬件加速**：虽然是通过回调获取帧，但 VLC 内部依然可以使用硬件解码。
- *
- * ## 渲染流程
- * ```
- * VLC 解码帧 → CallbackVideoSurface 回调 → BufferedImage → ImageBitmap → Compose Image
- * ```
- *
- * @see IPlayerController
- * @see CallbackVideoSurface
+ * * 优化版说明：
+ * 1. 修复了 VLC 底层 playing() 触发过早导致 BUFFERING 被提前覆盖的问题。
+ * 2. 建立了状态自愈防抖，收敛了 open/seek/buffering 对状态的竞争。
  */
 class DesktopVideoPlayerController(
     private val mediaPlayerFactory: MediaPlayerFactory,
@@ -47,6 +36,12 @@ class DesktopVideoPlayerController(
 
     companion object {
         private const val POSITION_POLL_INTERVAL_MS = 250L
+        /**
+         * seek 后等待 VLC buffering 事件的超时时间。
+         * 如果在此时间内 VLC 没有触发 buffering 事件（说明数据已缓存，seek 瞬间完成），
+         * 则自动将状态恢复为 PLAYING。
+         */
+        private const val SEEK_BUFFER_TIMEOUT_MS = 500L
     }
 
     // ==================== VLCJ 核心组件 ====================
@@ -62,6 +57,12 @@ class DesktopVideoPlayerController(
     @Volatile
     private var bufferedImage: BufferedImage? = null
 
+    /** 状态自愈核心锁：VLC 核心引擎是否真正处于就绪且应当播放的状态 */
+    private var isVlcPlayingReady = false
+
+    /** 标记 Seek 缓冲是否已被接管 */
+    private var seekBufferingTriggered = false
+
     init {
         // 配置回调视频表面
         val videoSurface = CallbackVideoSurface(
@@ -72,10 +73,19 @@ class DesktopVideoPlayerController(
         )
         mediaPlayer.videoSurface().set(videoSurface)
 
-        // 注册 VLCJ 事件监听器
+        // 注册优化后的 VLCJ 事件监听器
         mediaPlayer.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
+            override fun mediaChanged(mediaPlayer: MediaPlayer,media: MediaRef) {
+                isVlcPlayingReady = false
+                _playbackState.value = VideoPlaybackState.BUFFERING
+            }
+
             override fun playing(mediaPlayer: MediaPlayer) {
-                _playbackState.value = VideoPlaybackState.PLAYING
+                isVlcPlayingReady = true
+                // 只有当进度缓冲拉满，或者确认不在发生卡顿阻断时，才切换为 PLAYING
+                if (_bufferedPercent.value >= 100 || mediaPlayer.status().isPlaying) {
+                    _playbackState.value = VideoPlaybackState.PLAYING
+                }
                 startPositionPolling()
             }
 
@@ -84,31 +94,47 @@ class DesktopVideoPlayerController(
             }
 
             override fun stopped(mediaPlayer: MediaPlayer) {
+                isVlcPlayingReady = false
                 _playbackState.value = VideoPlaybackState.IDLE
                 stopPositionPolling()
             }
 
             override fun finished(mediaPlayer: MediaPlayer) {
+                isVlcPlayingReady = false
                 _playbackState.value = VideoPlaybackState.ENDED
                 stopPositionPolling()
             }
 
             override fun error(mediaPlayer: MediaPlayer) {
+                isVlcPlayingReady = false
                 _playbackState.value = VideoPlaybackState.ERROR
                 stopPositionPolling()
             }
 
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) {
-                if (_playbackState.value != VideoPlaybackState.PLAYING &&
-                    _playbackState.value != VideoPlaybackState.PAUSED
-                ) {
-                    _playbackState.value = VideoPlaybackState.BUFFERING
+                seekBufferingTriggered = true
+
+                // 将 0.0 ~ 1.0 归一化为 0 ~ 100 的整数进度
+                val percent = newCache.toInt().coerceIn(0, 100)
+                _bufferedPercent.value = percent
+
+                if (percent < 100) {
+                    // 只要未缓冲完，且当前不是 BUFFERING，则立即展出 Loading 圈
+                    if (_playbackState.value != VideoPlaybackState.BUFFERING) {
+                        _playbackState.value = VideoPlaybackState.BUFFERING
+                    }
+                } else {
+                    // 缓冲达到 100，结合底层核心就绪状态，安全恢复 PLAYING
+                    if (isVlcPlayingReady || mediaPlayer.status().isPlaying) {
+                        _playbackState.value = VideoPlaybackState.PLAYING
+                    }
                 }
-                _bufferedPercent.value = (newCache * 100).toInt().coerceIn(0, 100)
             }
 
             override fun lengthChanged(mediaPlayer: MediaPlayer, newLength: Long) {
-                _duration.value = newLength
+                if (newLength > 0) {
+                    _duration.value = newLength
+                }
             }
         })
     }
@@ -117,8 +143,6 @@ class DesktopVideoPlayerController(
 
     private inner class DesktopBufferFormatCallback : BufferFormatCallback {
         override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat {
-            // 使用 RV32 (ARGB) 格式，方便转换为 BufferedImage
-            // 立即初始化 BufferedImage，确保渲染开始时它已经就绪
             bufferedImage = BufferedImage(
                 sourceWidth,
                 sourceHeight,
@@ -141,13 +165,9 @@ class DesktopVideoPlayerController(
             val img = bufferedImage ?: return
             val buffer = nativeBuffers[0]
 
-            // 将像素数据从 Native Buffer 复制到 BufferedImage
-            // 这里使用 IntBuffer 批量复制像素数据，比字节复制快得多
             val pixelData = (img.raster.dataBuffer as java.awt.image.DataBufferInt).data
             buffer.asIntBuffer().get(pixelData)
 
-            // 转换为 Compose 可用的 ImageBitmap
-            // toComposeImageBitmap() 在 JVM 上只是简单包装 BufferedImage，性能开销极小
             _videoFrame.value = img.toComposeImageBitmap()
         }
     }
@@ -182,12 +202,16 @@ class DesktopVideoPlayerController(
         positionPollingJob = scope.launch {
             while (isActive) {
                 val vlcMediaPlayer = mediaPlayer
-                if (vlcMediaPlayer.status().isPlaying) {
-                    _currentPosition.value = vlcMediaPlayer.status().time()
-                    _duration.value = vlcMediaPlayer.status().length()
-                    if (_playbackState.value == VideoPlaybackState.BUFFERING) {
-                        _playbackState.value = VideoPlaybackState.PLAYING
+                try {
+                    if (vlcMediaPlayer.status().isPlaying) {
+                        _currentPosition.value = vlcMediaPlayer.status().time()
+                        val len = vlcMediaPlayer.status().length()
+                        if (len > 0) {
+                            _duration.value = len
+                        }
                     }
+                } catch (_: Exception) {
+                    // 状态临界期保护
                 }
                 delay(POSITION_POLL_INTERVAL_MS)
             }
@@ -199,16 +223,33 @@ class DesktopVideoPlayerController(
         positionPollingJob = null
     }
 
+    // ==================== Seek 缓冲处理 ====================
+
+    private fun performSeek(targetTimeMs: Long) {
+        seekBufferingTriggered = false
+        _playbackState.value = VideoPlaybackState.BUFFERING
+        mediaPlayer.controls().setTime(targetTimeMs)
+
+        // 启动超时边界阀：如果 VLC 没有抛出 buffering 变更，说明直接命中了本地代理缓存，瞬间完成跳转
+        scope.launch {
+            delay(SEEK_BUFFER_TIMEOUT_MS)
+            if (!seekBufferingTriggered && _playbackState.value == VideoPlaybackState.BUFFERING) {
+                if (mediaPlayer.status().isPlaying || isVlcPlayingReady) {
+                    _playbackState.value = VideoPlaybackState.PLAYING
+                }
+            }
+        }
+    }
+
     // ==================== IPlayerController 实现 ====================
 
     override suspend fun open(url: String, headers: Map<String, String>?) {
         DebugLog.d("DesktopVideoPlayerController", "open() called, url=$url")
+        isVlcPlayingReady = false
         _playbackState.value = VideoPlaybackState.BUFFERING
         _currentPosition.value = 0L
+        _bufferedPercent.value = 0
 
-        // 注意：VideoPlayerManager.open() 已经调用了 proxyServer.start() 和 getProxiedM3u8Url()，
-        // 所以这里收到的 url 已经是代理 URL（或原始 URL 如果代理不可用）。
-        // 不再重复调用 proxyServer.start() 和 getProxiedM3u8Url()，避免 URL 双重编码。
         DebugLog.d("DesktopVideoPlayerController", "Playing URL: $url")
         mediaPlayer.media().play(url)
         DebugLog.d("DesktopVideoPlayerController", "mediaPlayer.media().play() returned")
@@ -231,18 +272,17 @@ class DesktopVideoPlayerController(
     }
 
     override suspend fun seekTo(positionMs: Long) {
-        _playbackState.value = VideoPlaybackState.BUFFERING
-        mediaPlayer.controls().setTime(positionMs)
+        performSeek(positionMs)
     }
 
     override suspend fun seekForward(seconds: Long) {
         val currentTime = mediaPlayer.status().time()
-        mediaPlayer.controls().setTime(currentTime + seconds * 1000)
+        performSeek(currentTime + seconds * 1000)
     }
 
     override suspend fun seekBackward(seconds: Long) {
         val currentTime = mediaPlayer.status().time()
-        mediaPlayer.controls().setTime((currentTime - seconds * 1000).coerceAtLeast(0L))
+        performSeek((currentTime - seconds * 1000).coerceAtLeast(0L))
     }
 
     override suspend fun setVolume(volume: Float) {
@@ -257,7 +297,7 @@ class DesktopVideoPlayerController(
     override fun release() {
         stopPositionPolling()
 
-        // 停止代理服务器（使用 NonCancellable 确保执行）
+        // 停止代理服务器（使用 NonCancellable 确保安全执行）
         runBlocking(NonCancellable) {
             try {
                 proxyServer?.stop()
@@ -266,8 +306,7 @@ class DesktopVideoPlayerController(
 
         scope.cancel()
 
-        // 安全释放 VLCJ 资源
-        // 注意：不释放 mediaPlayerFactory，因为它是全局单例，由 DI 容器管理生命周期
+        // 安全异步释放 VLCJ 资源
         Thread {
             try {
                 if (mediaPlayer.status().isPlaying) {
