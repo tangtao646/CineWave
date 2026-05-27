@@ -1,5 +1,6 @@
 package com.example.kmp_demo.features.film.di
 
+import com.example.kmp_demo.features.film.data.remote.ApiKeyProvider
 import com.example.kmp_demo.features.film.data.remote.FilmApi
 import com.example.kmp_demo.features.film.data.remote.SnifferDataSource
 import com.example.kmp_demo.features.film.data.repository.FilmRepositoryJvm
@@ -20,8 +21,11 @@ import org.koin.dsl.module
  * - ✅ 复用 commonMain 的 ViewModel
  */
 val filmModuleJvm = module {
+    // API Key Provider（从 Compose Resources 读取 tmdb_api_key.txt）
+    single { ApiKeyProvider() }
+
     // API
-    single { FilmApi(get()) }
+    single { FilmApi(get(), get()) }
 
     // Sniffer DataSource (依赖 coreVideosourceModule 提供的 VideoSourceSearchEngine)
     single { SnifferDataSource(get()) }
