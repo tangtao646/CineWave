@@ -67,12 +67,7 @@ fun AndroidVideoPlayerScreen(
     title: String,
     onBack: () -> Unit,
     headers: Map<String, String>? = null,
-    controls: @Composable BoxScope.(state: VideoPlayerUiState, onAction: (PlayerAction) -> Unit) -> Unit = { s, action ->
-        Box(modifier = Modifier.align(Alignment.BottomCenter)) {
-            AndroidVideoPlayerControls(state = s, onAction = action)
-        }
-    },
-    topBar: @Composable (BoxScope.() -> Unit)? = null,
+    controls: @Composable BoxScope.(state: VideoPlayerUiState, onAction: (PlayerAction) -> Unit) -> Unit,
     onFullScreenChange: ((Boolean) -> Unit)? = null,
 ) {
     val fullscreenController = LocalFullscreenController.current
@@ -251,26 +246,7 @@ fun AndroidVideoPlayerScreen(
 
 }
 
-/**
- * Android 平台专用的播放器控制栏包装。
- *
- * 竖屏/横屏的显隐控制由 [LocalIsPortrait] CompositionLocal 自动处理：
- * - **竖屏模式**：隐藏音量控制和选集按钮（空间紧凑）
- * - **横屏模式**：显示所有控制元素
- *
- * [LocalIsPortrait] 由 [AndroidVideoPlayerScreen] 在顶层通过
- * [CompositionLocalProvider] 提供，基于 [LocalConfiguration.current.orientation] 计算。
- */
-@Composable
-private fun AndroidVideoPlayerControls(
-    state: VideoPlayerUiState,
-    onAction: (PlayerAction) -> Unit,
-) {
-    VideoPlayerControls(
-        state = state,
-        onAction = onAction,
-    )
-}
+
 
 internal fun handlePlayerAction(
     manager: VideoPlayerManager,

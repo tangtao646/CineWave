@@ -54,7 +54,6 @@ actual fun PlatformVideoPlayerScreen(
     onBack: () -> Unit,
     headers: Map<String, String>?,
     controls: @Composable BoxScope.(state: VideoPlayerUiState, onAction: (PlayerAction) -> Unit) -> Unit,
-    topBar: @Composable (BoxScope.() -> Unit)?,
     onFullScreenChange: ((Boolean) -> Unit)?,
 ) {
     val controller: IVideoPlayerController = koinInject()
