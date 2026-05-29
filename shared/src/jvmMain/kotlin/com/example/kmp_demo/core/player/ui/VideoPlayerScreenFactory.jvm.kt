@@ -3,6 +3,7 @@ package com.example.kmp_demo.core.player.ui
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.*
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
+import com.example.kmp_demo.core.player.cache.DebugLog
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.LocalFullscreenController
@@ -37,7 +38,7 @@ import org.koin.core.parameter.parametersOf
  * @see VideoPlayerManager
  */
 @Composable
- actual fun PlatformVideoPlayerScreen(
+actual fun PlatformVideoPlayerScreen(
     url: String,
     title: String,
     onBack: () -> Unit,
@@ -50,7 +51,8 @@ import org.koin.core.parameter.parametersOf
 
     // ========== 从 Koin 获取（由 DI 管理生命周期） ==========
     // 通过 parametersOf 将 CompositionLocal 中的 FullscreenController 传入构造函数
-    val controller: IVideoPlayerController = koinInject(parameters = { parametersOf(fullscreenController) })
+    val controller: IVideoPlayerController =
+        koinInject(parameters = { parametersOf(fullscreenController) })
     val proxyServer: CacheProxyServer = koinInject()
     val segmentCacheTracker: SegmentCacheTracker = koinInject()
 
@@ -67,10 +69,6 @@ import org.koin.core.parameter.parametersOf
         onManagerCreated?.invoke(manager)
     }
 
-    // 通过 CompositionLocal 注册桌面端键盘动作处理器。
-    // 由 DesktopKeyboardHandler 在捕获键盘事件时调用。
-    // 使用 CompositionLocalProvider 确保离开播放器页面时自动恢复默认值。
-    // 同时通过 PlayerKeyActionBridge 桥接到 AWT 事件线程。
     val uiState by manager.uiState.collectAsState()
     val keyActionHandler: (PlayerKeyAction) -> Unit = { action ->
         // 仅在播放器处于活跃状态时响应（非 IDLE、非 ERROR）
@@ -79,10 +77,32 @@ import org.koin.core.parameter.parametersOf
         ) {
             when (action) {
                 PlayerKeyAction.TogglePlayPause -> handlePlayerAction(manager, PlayerAction.TogglePlayPause)
-                PlayerKeyAction.SeekForward -> { /* 预留：快进 */ }
-                PlayerKeyAction.SeekBackward -> { /* 预留：快退 */ }
-                PlayerKeyAction.VolumeUp -> { /* 预留：增加音量 */ }
-                PlayerKeyAction.VolumeDown -> { /* 预留：减小音量 */ }
+                PlayerKeyAction.SeekForward -> {
+                    // 每次快进 10 秒
+                    manager.seekForward(10)
+                }
+                PlayerKeyAction.SeekBackward -> {
+                    // 每次快退 10 秒
+                    manager.seekBackward(10)
+                }
+                PlayerKeyAction.VolumeUp -> {
+                    // 每次增大 10%，最大 100%
+                    val newVolume = (uiState.volume + 0.1f).coerceAtMost(1.0f)
+                    manager.setVolume(newVolume)
+                }
+                PlayerKeyAction.VolumeDown -> {
+                    // 每次减小 10%，最小 0%
+                    val newVolume = (uiState.volume - 0.1f).coerceAtLeast(0.0f)
+                    manager.setVolume(newVolume)
+                }
+                PlayerKeyAction.ExitFullscreen -> {
+                    // 全屏时退出全屏，非全屏时不处理（避免误触退出播放页面）
+                    if (uiState.isFullScreen) {
+                        handlePlayerAction(manager, PlayerAction.ToggleFullScreen)
+                        // 同步通知 App.jvm.kt 更新 isFullScreen 状态，使左侧导航栏重新显示
+                        onFullScreenChange?.invoke(false)
+                    }
+                }
             }
         }
     }

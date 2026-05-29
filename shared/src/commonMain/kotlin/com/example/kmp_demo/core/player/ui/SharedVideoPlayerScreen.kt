@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import com.example.kmp_demo.core.network.createHttpClient
-import com.example.kmp_demo.core.player.domain.LocalFullscreenController
 import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
@@ -47,10 +46,6 @@ import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
  *   └─ onPlatformDispose: 回调     ← 平台提供（额外资源释放）
  * ```
  *
- * ## 键盘快捷键
- * 桌面端键盘快捷键由 [DesktopKeyboardHandler] 统一管理，
- * 播放器页面通过 [LocalPlayerKeyActionHandler] CompositionLocal 注册动作处理器。
- * 参见 [com.example.kmp_demo.core.player.domain.DesktopKeyboardHandler]。
  *
  * @param url 视频播放地址
  * @param title 视频标题
