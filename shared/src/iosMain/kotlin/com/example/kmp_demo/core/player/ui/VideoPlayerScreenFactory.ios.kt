@@ -1,6 +1,8 @@
 package com.example.kmp_demo.core.player.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 
 /**
  * iOS 平台实现：使用 [VideoPlayerScreen]（compose-media-player 原生实现）。
@@ -16,6 +18,7 @@ actual fun PlatformVideoPlayerScreen(
     headers: Map<String, String>?,
     controls: @Composable BoxScope.(state: VideoPlayerUiState, onAction: (PlayerAction) -> Unit) -> Unit,
     onFullScreenChange: ((Boolean) -> Unit)?,
+    onManagerCreated: ((VideoPlayerManager) -> Unit)?,
 ) {
     VideoPlayerScreen(
         url = url,
