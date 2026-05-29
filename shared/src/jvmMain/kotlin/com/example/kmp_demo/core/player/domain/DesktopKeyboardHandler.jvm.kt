@@ -64,10 +64,11 @@ fun DesktopKeyboardHandler() {
             val handler = PlayerKeyActionBridge.handler.get()
             if (handler != null) {
                 handler(action)
-                true // 消费事件
+                true
             } else {
-                false // 没有播放器处理，不消费
+                false
             }
+
         }
 
         focusManager.addKeyEventDispatcher(keyEventDispatcher)

@@ -5,6 +5,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
@@ -45,6 +48,15 @@ fun main() = application {
         onCloseRequest = ::exitApplication,
         title = "CineWave",
         state = windowState,
+        onPreviewKeyEvent = { keyEvent ->
+            // 在 Compose 窗口级别拦截 ESC 键，阻止系统默认回退行为
+            // 播放器内的 ESC 处理由 DesktopKeyboardHandler（AWT KeyboardFocusManager）负责
+            if (keyEvent.key == Key.Escape) {
+                true // 消费事件，阻止 Compose Desktop 默认的 ESC 行为
+            } else {
+                false // 其他按键正常传递
+            }
+        },
     ) {
         // 注入 Desktop 全屏控制器
         val fullscreenController = remember(windowState) {
