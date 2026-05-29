@@ -70,7 +70,6 @@ fun DomesticPlayerScreen(
                     },
                 )
             },
-            onManagerCreated = viewModel.onManagerCreated,
         )
 
         // 选集弹窗

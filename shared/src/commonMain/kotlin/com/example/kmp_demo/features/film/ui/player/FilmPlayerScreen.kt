@@ -70,7 +70,6 @@ fun FilmPlayerScreen(
                     },
                 )
             },
-            onManagerCreated = viewModel.onManagerCreated,
         )
 
         // 选集弹窗

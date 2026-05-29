@@ -5,7 +5,6 @@ import com.example.kmp_demo.core.IUiEffect
 import com.example.kmp_demo.core.IUiIntent
 import com.example.kmp_demo.core.IUiState
 import com.example.kmp_demo.core.player.domain.EpisodeInfo
-import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 
 /**
  * 播放器页 MVI 协议。
@@ -74,12 +73,13 @@ class PlayerContract {
 /**
  * 通用播放器 ViewModel。
  *
- * 职责：
+ * 重构后职责：
  * 1. 管理剧集索引 [currentIndex] 的维护与更新
- * 2. 通过 [onManagerCreated] 回调与 [VideoPlayerManager] 建立连接
- * 3. 选集弹窗状态管理
+ * 2. 选集弹窗状态管理
  *
- * 所有 UI 状态通过 [uiState] 统一暴露，Screen 层只需订阅一个 StateFlow。
+ * 移除 onManagerCreated 回调——ViewModel 不再持有 Manager 引用。
+ * 剧集切换时，ViewModel 只更新 currentIndex，
+ * URL 变化由 [PlatformVideoPlayerScreen] 的 LaunchedEffect(url) 自动响应。
  *
  * 使用方式：
  * ```kotlin
@@ -90,19 +90,6 @@ class PlayerContract {
 class PlayerViewModel : BaseMviViewModel<PlayerContract.State, PlayerContract.Intent, PlayerContract.Effect>(
     initialState = PlayerContract.State()
 ) {
-    /** VideoPlayerManager 引用，通过 onManagerCreated 回调获取 */
-    private var manager: VideoPlayerManager? = null
-
-    /**
-     * 供 [PlatformVideoPlayerScreen] 使用的 onManagerCreated 回调。
-     *
-     * 当 PlatformVideoPlayerScreen 创建 Manager 后调用此回调，
-     * ViewModel 借此获取 Manager 引用。
-     */
-    val onManagerCreated: (VideoPlayerManager) -> Unit = { mgr ->
-        manager = mgr
-    }
-
     override fun sendIntent(intent: PlayerContract.Intent) {
         when (intent) {
             is PlayerContract.Intent.Init -> handleInit(intent)
