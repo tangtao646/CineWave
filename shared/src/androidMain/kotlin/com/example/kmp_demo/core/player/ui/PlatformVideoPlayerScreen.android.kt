@@ -230,30 +230,19 @@ fun AndroidVideoPlayerScreen(
                                     WindowInsetsSides.Top + WindowInsetsSides.Horizontal
                                 )
                             )
-                            .clickable(enabled = true) {
+                    ) {
+                        VideoPlayerTopBar(
+                            title = title,
+                            onBack = {
                                 if (uiState.isFullScreen) {
                                     handlePlayerAction(manager, PlayerAction.ToggleFullScreen)
                                 } else {
                                     onBack()
                                 }
-                            }
-                    ) {
-                        if (topBar != null) {
-                            topBar()
-                        } else {
-                            VideoPlayerTopBar(
-                                title = title,
-                                onBack = {
-                                    if (uiState.isFullScreen) {
-                                        handlePlayerAction(manager, PlayerAction.ToggleFullScreen)
-                                    } else {
-                                        onBack()
-                                    }
-                                },
-                                pipEnabled = false,
-                                onPipToggle = {},
-                            )
-                        }
+                            },
+                            pipEnabled = false,
+                            onPipToggle = {},
+                        )
                     }
                 }
             }

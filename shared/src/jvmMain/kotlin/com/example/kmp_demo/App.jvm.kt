@@ -59,6 +59,7 @@ import com.example.kmp_demo.features.radio.ui.list.RadioListScreen
 import com.example.kmp_demo.features.radio.ui.list.RadioListViewModel
 import com.example.kmp_demo.features.radio.ui.search.RadioSearchScreen
 import com.example.kmp_demo.navigation.DesktopRoute
+import com.example.kmp_demo.navigation.FullScreenRoute
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
@@ -130,9 +131,7 @@ fun App() {
             // 当离开这些页面时，强制退出全屏模式，确保导航栏能重新显示
             LaunchedEffect(backStack.last()) {
                 val currentRoute = backStack.last()
-                isFullScreen = currentRoute is DesktopRoute.FilmPlayer
-                        || currentRoute is DesktopRoute.DomesticPlayer
-                        || currentRoute is DesktopRoute.RadioPlayer
+                isFullScreen = currentRoute is FullScreenRoute
             }
 
             // 全屏时监听 ESC 键退出全屏 (或者执行返回操作)
@@ -324,6 +323,8 @@ fun App() {
                                                 onFullScreenChange = { full -> isFullScreen = full }
                                             )
                                         }
+
+                                        else -> {}
                                     }
                                 }
                             }

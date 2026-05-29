@@ -3,7 +3,7 @@ package com.example.kmp_demo.features.radio.di
 import com.example.kmp_demo.features.radio.data.remote.IpApiService
 import com.example.kmp_demo.features.radio.data.remote.RadioApiService
 import com.example.kmp_demo.features.radio.data.repository.RadioRepositoryJvm
-import com.example.kmp_demo.features.radio.domain.player.IPlayerController
+import com.example.kmp_demo.features.radio.domain.player.IRadioPlayerController
 import com.example.kmp_demo.features.radio.domain.repository.RadioRepository
 import com.example.kmp_demo.features.radio.player.DesktopRadioPlayerController
 import com.example.kmp_demo.features.radio.player.RadioPlayerManager
@@ -32,7 +32,7 @@ val radioModuleJvm = module {
 
     // === Player Controller — VLCJ MediaPlayer ===
     // 使用全局单例 MediaPlayerFactory 创建电台播放器
-    single<IPlayerController> { DesktopRadioPlayerController(mediaPlayerFactory = get()) }
+    single<IRadioPlayerController> { DesktopRadioPlayerController(mediaPlayerFactory = get()) }
 
     // === Player Manager ===
     single { RadioPlayerManager(get()) }

@@ -5,8 +5,8 @@ import com.example.kmp_demo.core.player.cache.CacheProxyServerJvm
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
-import com.example.kmp_demo.core.player.domain.IPlayerController as VideoPlayerController
-import com.example.kmp_demo.features.radio.domain.player.IPlayerController as RadioPlayerController
+import com.example.kmp_demo.core.player.domain.IVideoPlayerController
+import com.example.kmp_demo.features.radio.domain.player.IRadioPlayerController
 import com.example.kmp_demo.features.radio.player.DesktopRadioPlayerController
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import org.koin.core.module.Module
@@ -60,7 +60,7 @@ actual val platformModule: Module = module {
 
     // 2. 播放器控制器必须是 factory，因为每次进入播放页都需要一个新的 MediaPlayer 实例。
     // 旧的实例会在 PlatformVideoPlayerScreen 退出时被 release() 销毁。
-    factory<VideoPlayerController> {
+    factory<IVideoPlayerController> {
         DesktopVideoPlayerController(
             mediaPlayerFactory = get(),
             proxyServer = get(),
@@ -69,7 +69,7 @@ actual val platformModule: Module = module {
 
 
     // === Radio Player Controller (VLCJ) ===
-    single<RadioPlayerController> {
+    single<IRadioPlayerController> {
         DesktopRadioPlayerController(mediaPlayerFactory = get())
     }
 }

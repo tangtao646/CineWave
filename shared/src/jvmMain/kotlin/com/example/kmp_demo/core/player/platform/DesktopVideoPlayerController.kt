@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
 import com.example.kmp_demo.core.player.cache.DebugLog
-import com.example.kmp_demo.core.player.domain.IPlayerController
+import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.VideoPlaybackState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +32,7 @@ import java.nio.ByteBuffer
 class DesktopVideoPlayerController(
     private val mediaPlayerFactory: MediaPlayerFactory,
     private val proxyServer: CacheProxyServer? = null,
-) : IPlayerController {
+) : IVideoPlayerController {
 
     companion object {
         private const val POSITION_POLL_INTERVAL_MS = 250L

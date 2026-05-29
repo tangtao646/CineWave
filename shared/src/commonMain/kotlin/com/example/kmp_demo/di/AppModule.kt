@@ -10,7 +10,7 @@ import org.koin.dsl.module
  * 通用 Koin 模块（跨平台）
  *
  * 提供所有跨平台共享的依赖。
- * 平台特定的依赖（IPlayerController, AppDatabase）由 platformModule 提供。
+ * 平台特定的依赖（IVideoPlayerController, AppDatabase）由 platformModule 提供。
  */
 val commonModule = module {
     // === Network ===

@@ -77,14 +77,6 @@ fun DomesticPlayerScreen(
                     onEpisodeSelectorClick = { showEpisodeSheet = true },
                 )
             },
-            topBar = {
-                VideoPlayerTopBar(
-                    title = displayTitle,
-                    onBack = onBack,
-                    pipEnabled = false,
-                    onPipToggle = {},
-                )
-            },
         )
 
         // 沉浸式选集弹窗

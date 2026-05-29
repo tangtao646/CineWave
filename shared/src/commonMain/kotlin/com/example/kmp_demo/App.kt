@@ -18,6 +18,9 @@ import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
+import com.example.kmp_demo.features.domestic.DomesticRoutes
+import com.example.kmp_demo.features.film.FilmRoutes
+import com.example.kmp_demo.features.radio.RadioRoutes
 
 val LocalScaffoldPadding = staticCompositionLocalOf { PaddingValues(0.dp) }
 
@@ -52,17 +55,4 @@ fun AppBottomBar(navController: NavHostController) {
                 })
         }
     }
-}
-
-// 路由常量（供 commonMain 使用）
-object RadioRoutes {
-    const val graph = "radio_graph"
-}
-
-object FilmRoutes {
-    const val graph = "film_graph"
-}
-
-object DomesticRoutes {
-    const val graph = "domestic_graph"
 }

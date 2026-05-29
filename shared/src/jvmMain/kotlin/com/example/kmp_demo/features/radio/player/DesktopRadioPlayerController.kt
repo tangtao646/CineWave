@@ -1,7 +1,7 @@
 package com.example.kmp_demo.features.radio.player
 
 import com.example.kmp_demo.features.radio.domain.player.AppPlaybackState
-import com.example.kmp_demo.features.radio.domain.player.IPlayerController
+import com.example.kmp_demo.features.radio.domain.player.IRadioPlayerController
 import com.example.kmp_demo.features.radio.domain.player.MediaMetadataInfo
 import com.example.kmp_demo.features.radio.domain.player.PlayableMedia
 import kotlinx.coroutines.*
@@ -29,7 +29,7 @@ import java.time.format.DateTimeFormatter
  */
 class DesktopRadioPlayerController(
     private val mediaPlayerFactory: MediaPlayerFactory
-) : IPlayerController {
+) : IRadioPlayerController {
 
     companion object {
         private const val LOG_FILE = "radio_player_debug.log"
