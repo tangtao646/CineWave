@@ -30,7 +30,7 @@ val radioModule = module {
     single<RadioRepository> { RadioRepositoryImpl(get(), get(), get()) }
 
     // === Player ===
-    // IPlayerController 由 platformModule 提供
+    // IRadioPlayerController 由 platformModule 提供
     single { RadioPlayerManager(get()) }
 
     // === ViewModels ===

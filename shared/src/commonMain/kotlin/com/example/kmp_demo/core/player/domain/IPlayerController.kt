@@ -22,7 +22,7 @@ enum class VideoPlaybackState {
  * 任何平台特定的播放器实现（如 compose-media-player、ExoPlayer、AVPlayer 等）
  * 只需实现此接口即可被 UI 层使用，实现"易替换"的设计目标。
  */
-interface IPlayerController {
+interface IVideoPlayerController {
 
     /** 播放状态 */
     val playbackState: StateFlow<VideoPlaybackState>

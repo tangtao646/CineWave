@@ -16,7 +16,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import com.example.kmp_demo.core.player.cache.ExoPlayerCache
-import com.example.kmp_demo.core.player.domain.IPlayerController
+import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.VideoPlaybackState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,7 +52,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class ExoPlayerController(
     private val context: Context,
     private val exoCache: ExoPlayerCache,
-) : IPlayerController {
+) : IVideoPlayerController {
 
     companion object {
         private const val TAG = "ExoPlayerController"
@@ -185,7 +185,7 @@ class ExoPlayerController(
         }
     }
 
-    // ==================== IPlayerController ====================
+    // ==================== IVideoPlayerController ====================
 
     @OptIn(UnstableApi::class)
     override suspend fun open(url: String, headers: Map<String, String>?) {

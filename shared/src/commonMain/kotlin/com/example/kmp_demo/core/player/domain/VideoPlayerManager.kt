@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.*
  * 视频播放器业务编排层 (Orchestrator)
  *
  * 职责：
- * 1. 将 IPlayerController 的多个 StateFlow 聚合为单一的 VideoPlayerUiState
+ * 1. 将 IVideoPlayerController 的多个 StateFlow 聚合为单一的 VideoPlayerUiState
  * 2. 提供自动隐藏控制栏的计时逻辑
  * 3. 缓存预加载与播放器启动的协调
  *
@@ -45,7 +45,7 @@ import kotlinx.coroutines.flow.*
  * @param segmentCacheTracker 切片缓存状态追踪器，用于在 SeekBar 上标记已缓存/未缓存区域
  */
 class VideoPlayerManager(
-    private val controller: IPlayerController,
+    private val controller: IVideoPlayerController,
     /** 本地 HTTP 代理服务器，让播放器所有请求经过缓存 */
     private val proxyServer: CacheProxyServer? = null,
     /** 切片缓存状态追踪器，用于在 SeekBar 上标记已缓存/未缓存区域 */

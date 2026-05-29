@@ -22,7 +22,8 @@ abstract class BaseMviViewModel<S : IUiState, I : IUiIntent, E : IUiEffect>(
     private val _uiState = MutableStateFlow(initialState)
     val uiState = _uiState.asStateFlow()
 
-    private val _uiEffect = Channel<E>(Channel.BUFFERED)
+    // 使用 CONFLATED：UI 层只消费最新的副作用，避免页面恢复后消费过期事件
+    private val _uiEffect = Channel<E>(Channel.CONFLATED)
     val uiEffect = _uiEffect.receiveAsFlow()
 
     /**

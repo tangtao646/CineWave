@@ -24,7 +24,7 @@ data class MediaMetadataInfo(
     val artist: String? = null
 )
 
-interface IPlayerController {
+interface IRadioPlayerController {
     val isPlaying: StateFlow<Boolean>
     val currentMediaId: StateFlow<String?>
     val playbackState: StateFlow<AppPlaybackState>

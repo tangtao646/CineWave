@@ -22,7 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
-import com.example.kmp_demo.core.player.domain.IPlayerController
+import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
@@ -39,7 +39,7 @@ import org.koin.compose.koinInject
  * ## 架构
  * - 视频渲染：VLCJ 的 [CallbackVideoSurface] 获取 RGBA 帧 → Compose Canvas 绘制
  * - 业务编排：[VideoPlayerManager] 聚合状态、管理控制栏显隐、自动隐藏
- * - 播放控制：通过 [IPlayerController] 接口与 commonMain 解耦
+ * - 播放控制：通过 [IVideoPlayerController] 接口与 commonMain 解耦
  * - 生命周期：DisposableEffect 管理播放器资源的创建与释放
  *
  *
@@ -57,7 +57,7 @@ actual fun PlatformVideoPlayerScreen(
     topBar: @Composable (BoxScope.() -> Unit)?,
     onFullScreenChange: ((Boolean) -> Unit)?,
 ) {
-    val controller: IPlayerController = koinInject()
+    val controller: IVideoPlayerController = koinInject()
     val proxyServer: CacheProxyServer = koinInject()
     val segmentCacheTracker: SegmentCacheTracker = koinInject()
     val manager = remember(controller, proxyServer, segmentCacheTracker) {
@@ -171,22 +171,18 @@ actual fun PlatformVideoPlayerScreen(
                             }
                         }
                 ) {
-                    if (topBar != null) {
-                        topBar()
-                    } else {
-                        VideoPlayerTopBar(
-                            title = title,
-                            onBack = {
-                                if (uiState.isFullScreen) {
-                                    manager.toggleFullScreen()
-                                } else {
-                                    onBack()
-                                }
-                            },
-                            pipEnabled = false,
-                            onPipToggle = {},
-                        )
-                    }
+                    VideoPlayerTopBar(
+                        title = title,
+                        onBack = {
+                            if (uiState.isFullScreen) {
+                                manager.toggleFullScreen()
+                            } else {
+                                onBack()
+                            }
+                        },
+                        pipEnabled = false,
+                        onPipToggle = {},
+                    )
                 }
             }
         }

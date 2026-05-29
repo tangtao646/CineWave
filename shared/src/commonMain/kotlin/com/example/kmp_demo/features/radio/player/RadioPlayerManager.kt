@@ -2,7 +2,7 @@ package com.example.kmp_demo.features.radio.player
 
 import com.example.kmp_demo.features.radio.domain.model.RadioStation
 import com.example.kmp_demo.features.radio.domain.player.AppPlaybackState
-import com.example.kmp_demo.features.radio.domain.player.IPlayerController
+import com.example.kmp_demo.features.radio.domain.player.IRadioPlayerController
 import com.example.kmp_demo.features.radio.domain.player.MediaMetadataInfo
 import com.example.kmp_demo.features.radio.domain.player.PlayableMedia
 import kotlinx.coroutines.*
@@ -23,7 +23,7 @@ data class PlayerUiState(
  * 业务编排层 (Orchestrator)
  */
 class RadioPlayerManager(
-    private val playerController: IPlayerController
+    private val playerController: IRadioPlayerController
 ) {
     // 使用应用级别的作用域，避免在单例中 cancel 后导致无法使用
     private val managerScope = CoroutineScope(Dispatchers.Main + SupervisorJob())

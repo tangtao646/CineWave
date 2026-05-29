@@ -9,7 +9,7 @@ import com.example.kmp_demo.core.data.local.room.getRoomDatabase
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.ExoPlayerCache
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
-import com.example.kmp_demo.core.player.domain.IPlayerController
+import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.platform.ExoPlayerController
 import com.example.kmp_demo.core.player.platform.getDefaultCacheDir
 import org.koin.core.module.Module
@@ -53,9 +53,9 @@ actual val platformModule: Module = module {
 
     // === Video Player Controller (ExoPlayer + SimpleCache) ===
     // factory{} 而非 single{}：每次进入播放页创建新实例，退出时 release() 销毁
-    // 同时注册 IPlayerController 接口和 ExoPlayerController 具体类型，
+    // 同时注册 IVideoPlayerController 接口和 ExoPlayerController 具体类型，
     // 因为 PlatformVideoPlayerScreen.android.kt 中直接注入 ExoPlayerController 以访问 .player 属性
-    factory<IPlayerController> {
+    factory<IVideoPlayerController> {
         ExoPlayerController(
             context = AndroidAppContext.context,
             exoCache = get(),

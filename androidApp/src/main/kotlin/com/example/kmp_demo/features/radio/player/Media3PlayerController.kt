@@ -12,7 +12,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.kmp_demo.features.radio.domain.player.AppPlaybackState
-import com.example.kmp_demo.features.radio.domain.player.IPlayerController
+import com.example.kmp_demo.features.radio.domain.player.IRadioPlayerController
 import com.example.kmp_demo.features.radio.domain.player.MediaMetadataInfo
 import com.example.kmp_demo.features.radio.domain.player.PlayableMedia
 import com.example.kmp_demo.features.radio.service.RadioPlaybackService
@@ -35,7 +35,7 @@ import kotlinx.coroutines.withTimeout
 
 class Media3PlayerController(
     private val context: Context
-) : IPlayerController {
+) : IRadioPlayerController {
 
     private val tag = "Media3PlayerController"
     private var controllerFuture: ListenableFuture<MediaController>? = null
