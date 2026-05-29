@@ -41,6 +41,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
 import com.example.kmp_demo.core.initializeCoil
+import com.example.kmp_demo.core.player.domain.DesktopKeyboardHandler
 import com.example.kmp_demo.core.security.SensitiveWordFilter
 import com.example.kmp_demo.core.security.SensitiveWordLoader
 import com.example.kmp_demo.features.domestic.ui.DomesticDetailScreen
@@ -80,6 +81,10 @@ import org.koin.core.parameter.parametersOf
  * ## 全屏沉浸式播放
  * 当视频播放器进入全屏模式时，左侧导航栏自动隐藏，播放器占据整个窗口。
  * 按 ESC 键或点击播放器顶栏的退出全屏按钮可退出全屏模式。
+ *
+ * ## 键盘快捷键
+ * - **空格键**：切换播放/暂停（通过 AWT KeyboardFocusManager 全局捕获）
+ * - **ESC 键**：退出全屏 / 返回上一页
  */
 @Composable
 fun App() {
@@ -134,6 +139,10 @@ fun App() {
                 isFullScreen = currentRoute is FullScreenRoute
             }
 
+            // 注册桌面端全局键盘事件处理器（使用 AWT KeyboardFocusManager）
+            // 捕获空格键切换播放/暂停，通过全局单例 VideoPlayerKeyHandler 转发到当前播放器
+            DesktopKeyboardHandler()
+
             // 全屏时监听 ESC 键退出全屏 (或者执行返回操作)
             Box(
                 modifier = Modifier
@@ -142,10 +151,6 @@ fun App() {
                         if (keyEvent.key == Key.Escape) {
                             if (isFullScreen) {
                                 isFullScreen = false
-                                true
-                            } else if (backStack.size > 1) {
-                                // 如果不是全屏且有回退栈，则执行返回
-                                backStack.removeLast()
                                 true
                             } else {
                                 false
@@ -177,8 +182,6 @@ fun App() {
                             // 桌面端 MiniPlayer 状态：提前获取，供列表 padding 和 MiniPlayer 悬浮使用
                             val playerUiState by radioPlayerManager.uiState.collectAsState()
                             val currentRoute = backStack.last()
-                            val isRadioSection = currentRoute is DesktopRoute.RadioList || currentRoute is DesktopRoute.RadioSearch
-                            val hasCurrentStation = playerUiState.currentStation != null
 
                             // 使用 Navigation3 的 NavDisplay 替代手动的 when(currentRoute)
                             NavDisplay(
@@ -385,11 +388,8 @@ fun DesktopNavigationRail(
                 alwaysShowLabel = true
             )
         }
-
-
     }
 }
-
 
 private data class DesktopNavItem(
     val route: DesktopRoute,

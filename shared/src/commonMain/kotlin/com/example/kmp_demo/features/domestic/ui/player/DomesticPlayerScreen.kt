@@ -3,20 +3,17 @@ package com.example.kmp_demo.features.domestic.ui.player
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.example.kmp_demo.core.player.domain.EpisodeInfo
+import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.ui.*
-import com.example.kmp_demo.features.domestic.ui.DomesticDetailViewModel
-import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * 国内板块播放器屏幕 — 支持沉浸式选集。
+ * 国内板块播放器屏幕 — 支持沉浸式选集与自动连播。
  *
- * 与 [FilmPlayerScreen] 不同，本组件接收剧集列表 [episodes]，
+ * 与 [FilmPlayerScreen] 功能对等，接收剧集列表 [episodes]，
  * 在播放器内提供选集功能，用户无需返回详情页即可切换剧集。
  *
  * 设计要点：
@@ -24,6 +21,7 @@ import org.koin.compose.viewmodel.koinViewModel
  * - 控制栏包含选集按钮（仅当剧集数 > 1 时显示）
  * - 选集弹窗使用 Material3 ModalBottomSheet 沉浸式展示
  * - 切换剧集时利用 [PlatformVideoPlayerScreen] 的 LaunchedEffect(url) 自动重新加载
+ * - 自动连播：播放完一集自动进入下一集（通过 [VideoPlayerManager] 的剧集上下文实现）
  *
  * @param initialUrl    初始播放 URL
  * @param seriesTitle   剧集系列名称（如"狂飙"）
@@ -58,6 +56,12 @@ fun DomesticPlayerScreen(
         // URL 变化会触发 PlatformVideoPlayerScreen 内部的 LaunchedEffect(url) 自动切换
     }
 
+    // 自动连播回调：当 Manager 检测到播放结束且有下一集时触发
+    val onAutoNext: (Int, EpisodeInfo) -> Unit = { nextIndex, _ ->
+        currentIndex = nextIndex
+        // URL 变化触发 PlatformVideoPlayerScreen 重新加载
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -76,6 +80,13 @@ fun DomesticPlayerScreen(
                     currentEpisodeLabel = currentEpisode.label,
                     onEpisodeSelectorClick = { showEpisodeSheet = true },
                 )
+            },
+            // 注入剧集上下文到 Manager，启用自动连播
+            onManagerCreated = { manager ->
+                if (episodes.size > 1) {
+                    manager.setEpisodeContext(episodes, currentIndex)
+                    manager.onSwitchToNextEpisode = onAutoNext
+                }
             },
         )
 

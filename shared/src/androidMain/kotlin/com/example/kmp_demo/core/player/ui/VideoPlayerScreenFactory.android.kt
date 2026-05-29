@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -43,6 +44,7 @@ import org.koin.core.parameter.parametersOf
  * @param headers 自定义请求头
  * @param controls 自定义控制栏
  * @param onFullScreenChange 全屏状态变化回调
+ * @param onManagerCreated 当 [VideoPlayerManager] 创建完成后的回调
  */
 @Composable
 actual fun PlatformVideoPlayerScreen(
@@ -52,6 +54,7 @@ actual fun PlatformVideoPlayerScreen(
     headers: Map<String, String>?,
     controls: @Composable BoxScope.(state: VideoPlayerUiState, onAction: (PlayerAction) -> Unit) -> Unit,
     onFullScreenChange: ((Boolean) -> Unit)?,
+    onManagerCreated: ((VideoPlayerManager) -> Unit)?,
 ) {
     val fullscreenController = LocalFullscreenController.current
 
@@ -67,6 +70,11 @@ actual fun PlatformVideoPlayerScreen(
             proxyServer = null,          // Android 使用 SimpleCache，无需代理
             segmentCacheTracker = segmentCacheTracker,
         )
+    }
+
+    // 通知上层 Manager 已创建，用于注入剧集上下文等
+    LaunchedEffect(manager) {
+        onManagerCreated?.invoke(manager)
     }
 
     // ========== 横竖屏检测 ==========

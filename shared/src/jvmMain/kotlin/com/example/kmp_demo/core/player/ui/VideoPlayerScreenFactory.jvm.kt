@@ -40,6 +40,7 @@ import org.koin.core.parameter.parametersOf
     headers: Map<String, String>?,
     controls: @Composable BoxScope.(state: VideoPlayerUiState, onAction: (PlayerAction) -> Unit) -> Unit,
     onFullScreenChange: ((Boolean) -> Unit)?,
+    onManagerCreated: ((VideoPlayerManager) -> Unit)?,
 ) {
     val fullscreenController = LocalFullscreenController.current
 
@@ -55,6 +56,11 @@ import org.koin.core.parameter.parametersOf
             proxyServer = proxyServer,
             segmentCacheTracker = segmentCacheTracker,
         )
+    }
+
+    // 通知上层 Manager 已创建，用于注入剧集上下文等
+    LaunchedEffect(manager) {
+        onManagerCreated?.invoke(manager)
     }
 
     SharedVideoPlayerScreen(
