@@ -24,6 +24,5 @@ expect fun PlatformVideoPlayerScreen(
             VideoPlayerControls(state = s, onAction = action)
         }
     },
-    topBar: @Composable (BoxScope.() -> Unit)? = null,
     onFullScreenChange: ((Boolean) -> Unit)? = null,
 )
