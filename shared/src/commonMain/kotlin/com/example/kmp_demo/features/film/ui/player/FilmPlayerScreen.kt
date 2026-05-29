@@ -11,7 +11,7 @@ import com.example.kmp_demo.core.player.ui.*
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * 电影播放器屏幕 — 支持沉浸式选集与自动连播。
+ * 电影播放器屏幕 — 支持沉浸式选集。
  *
  * 纯 UI 层，所有业务逻辑委托给 [PlayerViewModel]。
  *
@@ -20,7 +20,6 @@ import org.koin.compose.viewmodel.koinViewModel
  * - 控制栏包含选集按钮（仅当剧集数 > 1 时显示）
  * - 选集弹窗使用 Material3 ModalBottomSheet 沉浸式展示
  * - 切换剧集时利用 [PlatformVideoPlayerScreen] 的 LaunchedEffect(url) 自动重新加载
- * - 自动连播：播放完一集自动进入下一集（通过 [PlayerViewModel] 的剧集上下文实现）
  *
  * @param initialUrl    初始播放 URL
  * @param seriesTitle   影片系列名称
@@ -38,8 +37,8 @@ fun FilmPlayerScreen(
     val viewModel: PlayerViewModel = koinViewModel()
     val state by viewModel.uiState.collectAsState()
 
-    // 初始化剧集上下文
-    LaunchedEffect(initialUrl, episodes, seriesTitle) {
+    // 初始化：传递 episodes 和 initialUrl，由 ViewModel 管理剧集索引
+    LaunchedEffect(Unit) {
         val initialIndex = episodes.indexOfFirst { it.url == initialUrl }.coerceAtLeast(0)
         viewModel.sendIntent(
             PlayerContract.Intent.Init(
@@ -71,11 +70,10 @@ fun FilmPlayerScreen(
                     },
                 )
             },
-            // 注入剧集上下文到 Manager，启用自动连播
             onManagerCreated = viewModel.onManagerCreated,
         )
 
-        // 沉浸式选集弹窗
+        // 选集弹窗
         if (state.showEpisodeSheet) {
             EpisodeSelectorSheet(
                 episodes = episodes,
