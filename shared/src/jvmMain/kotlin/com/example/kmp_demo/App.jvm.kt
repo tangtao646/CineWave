@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
@@ -61,6 +63,7 @@ import com.example.kmp_demo.features.radio.ui.list.RadioListViewModel
 import com.example.kmp_demo.features.radio.ui.search.RadioSearchScreen
 import com.example.kmp_demo.navigation.DesktopRoute
 import com.example.kmp_demo.navigation.FullScreenRoute
+import com.example.kmp_demo.navigation.NavSection
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
@@ -149,7 +152,7 @@ fun App() {
                     if (!isFullScreen) {
                         DesktopNavigationRail(
                             currentScreen = backStack.last() as DesktopRoute,
-                            onNavigate = { route -> 
+                            onNavigate = { route ->
                                 // 桌面端导航通常点击主项时清空栈并跳转
                                 backStack.clear()
                                 backStack.add(route)
@@ -179,14 +182,23 @@ fun App() {
                                         is DesktopRoute.RadioList -> {
                                             // 在 NavEntry 内部重新观察状态，确保状态变化时能触发重组
                                             val innerPlayerUiState by radioPlayerManager.uiState.collectAsState()
-                                            val innerHasCurrentStation = innerPlayerUiState.currentStation != null
+                                            val innerHasCurrentStation =
+                                                innerPlayerUiState.currentStation != null
 
                                             Column(modifier = Modifier.fillMaxSize()) {
                                                 RadioListScreen(
                                                     modifier = Modifier.weight(1f),
                                                     viewModel = radioViewModel,
-                                                    onNavigateToSearch = { backStack.add(DesktopRoute.RadioSearch) },
-                                                    onNavigateToPlayer = { backStack.add(DesktopRoute.RadioPlayer) }
+                                                    onNavigateToSearch = {
+                                                        backStack.add(
+                                                            DesktopRoute.RadioSearch
+                                                        )
+                                                    },
+                                                    onNavigateToPlayer = {
+                                                        backStack.add(
+                                                            DesktopRoute.RadioPlayer
+                                                        )
+                                                    }
                                                 )
 
                                                 if (innerHasCurrentStation) {
@@ -247,7 +259,13 @@ fun App() {
                                                 onBackClick = { backStack.removeLast() },
                                                 onNavigateToPlayer = { url, title ->
                                                     val episodes = viewModel.episodesCache.value
-                                                    backStack.add(DesktopRoute.FilmPlayer(url, title, episodes))
+                                                    backStack.add(
+                                                        DesktopRoute.FilmPlayer(
+                                                            url,
+                                                            title,
+                                                            episodes
+                                                        )
+                                                    )
                                                 }
                                             )
                                         }
@@ -257,9 +275,9 @@ fun App() {
                                                 initialUrl = desktopRoute.url,
                                                 seriesTitle = desktopRoute.title,
                                                 episodes = desktopRoute.episodes,
-                                                onBack = { 
+                                                onBack = {
                                                     isFullScreen = false
-                                                    backStack.removeLast() 
+                                                    backStack.removeLast()
                                                 },
                                                 onFullScreenChange = { full -> isFullScreen = full }
                                             )
@@ -293,7 +311,13 @@ fun App() {
                                                 viewModel = viewModel,
                                                 onBack = { backStack.removeLast() },
                                                 onPlay = { url, title, episodes ->
-                                                    backStack.add(DesktopRoute.DomesticPlayer(url, title, episodes))
+                                                    backStack.add(
+                                                        DesktopRoute.DomesticPlayer(
+                                                            url,
+                                                            title,
+                                                            episodes
+                                                        )
+                                                    )
                                                 }
                                             )
                                         }
@@ -303,9 +327,9 @@ fun App() {
                                                 initialUrl = desktopRoute.url,
                                                 seriesTitle = desktopRoute.title,
                                                 episodes = desktopRoute.episodes,
-                                                onBack = { 
+                                                onBack = {
                                                     isFullScreen = false
-                                                    backStack.removeLast() 
+                                                    backStack.removeLast()
                                                 },
                                                 onFullScreenChange = { full -> isFullScreen = full }
                                             )
@@ -328,6 +352,14 @@ fun App() {
  *
  * 使用 Material3 NavigationRail 组件。
  * 底部集成电台 MiniPlayer（紧凑模式），始终可见。
+ *
+ * ## 选中状态保持
+ * 使用 [DesktopRoute.section] 判断所属板块，而非精确路由匹配。
+ * 这样当进入 DomesticPlayer 时，"国产"按钮仍保持选中状态。
+ *
+ * ## 配色方案
+ * 选中项使用更鲜明的配色：主色背景 + 白色文字/图标，
+ * 未选中项使用半透明灰色，确保视觉层次清晰。
  */
 @Composable
 fun DesktopNavigationRail(
@@ -339,6 +371,9 @@ fun DesktopNavigationRail(
         DesktopNavItem(DesktopRoute.FilmHome, "电影", Icons.Default.Face),
         DesktopNavItem(DesktopRoute.DomesticHome, "国产", Icons.Default.Tv)
     )
+
+    // 当前所属板块：通过 section 属性匹配，而非精确路由
+    val currentSection = currentScreen.section
 
     NavigationRail(
         modifier = Modifier.fillMaxHeight(),
@@ -358,7 +393,7 @@ fun DesktopNavigationRail(
         Spacer(modifier = Modifier.height(8.dp))
 
         screens.forEach { item ->
-            val selected = item.route == currentScreen
+            val selected = item.route.section == currentSection
             NavigationRailItem(
                 selected = selected,
                 onClick = { onNavigate(item.route) },
@@ -369,7 +404,16 @@ fun DesktopNavigationRail(
                     )
                 },
                 label = { Text(item.label) },
-                alwaysShowLabel = true
+                alwaysShowLabel = true,
+                colors = NavigationRailItemDefaults.colors(
+                    // 选中项：白色图标/文字 + 主色指示器
+                    selectedIconColor = Color.White,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primary,
+                    // 未选中项：半透明灰色
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
             )
         }
     }
