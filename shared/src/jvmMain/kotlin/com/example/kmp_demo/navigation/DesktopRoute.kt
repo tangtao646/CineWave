@@ -15,49 +15,87 @@ import kotlinx.serialization.Serializable
 interface FullScreenRoute : DesktopRoute
 
 /**
+ * 导航板块枚举。
+ *
+ * 用于侧边导航栏的选中状态判断，按板块分组而非精确路由匹配。
+ * 例如 DomesticPlayer 和 DomesticHome 都属于 DOMESTIC 板块，
+ * 进入播放器时"国产"按钮仍保持选中状态。
+ */
+enum class NavSection {
+    RADIO,
+    FILM,
+    DOMESTIC,
+}
+
+/**
  * Desktop 端类型安全路由定义 (Navigation3)
  */
 @Serializable
 sealed interface DesktopRoute : NavKey {
     
-    @Serializable
-    data object RadioList : DesktopRoute
+    /** 所属导航板块，用于侧边栏选中状态判断 */
+    val section: NavSection
     
     @Serializable
-    data object RadioSearch : DesktopRoute
+    data object RadioList : DesktopRoute {
+        override val section: NavSection get() = NavSection.RADIO
+    }
     
     @Serializable
-    data object RadioPlayer : DesktopRoute, FullScreenRoute
+    data object RadioSearch : DesktopRoute {
+        override val section: NavSection get() = NavSection.RADIO
+    }
     
     @Serializable
-    data object FilmHome : DesktopRoute
+    data object RadioPlayer : DesktopRoute, FullScreenRoute {
+        override val section: NavSection get() = NavSection.RADIO
+    }
     
     @Serializable
-    data object FilmSearch : DesktopRoute
+    data object FilmHome : DesktopRoute {
+        override val section: NavSection get() = NavSection.FILM
+    }
     
     @Serializable
-    data class FilmDetail(val movieId: Int) : DesktopRoute
+    data object FilmSearch : DesktopRoute {
+        override val section: NavSection get() = NavSection.FILM
+    }
+    
+    @Serializable
+    data class FilmDetail(val movieId: Int) : DesktopRoute {
+        override val section: NavSection get() = NavSection.FILM
+    }
     
     @Serializable
     data class FilmPlayer(
         val url: String, 
         val title: String, 
         val episodes: List<EpisodeInfo> = emptyList()
-    ) : DesktopRoute, FullScreenRoute
+    ) : DesktopRoute, FullScreenRoute {
+        override val section: NavSection get() = NavSection.FILM
+    }
     
     @Serializable
-    data object DomesticHome : DesktopRoute
+    data object DomesticHome : DesktopRoute {
+        override val section: NavSection get() = NavSection.DOMESTIC
+    }
     
     @Serializable
-    data object DomesticSearch : DesktopRoute
+    data object DomesticSearch : DesktopRoute {
+        override val section: NavSection get() = NavSection.DOMESTIC
+    }
     
     @Serializable
-    data class DomesticDetail(val title: String) : DesktopRoute
+    data class DomesticDetail(val title: String) : DesktopRoute {
+        override val section: NavSection get() = NavSection.DOMESTIC
+    }
     
     @Serializable
     data class DomesticPlayer(
         val url: String, 
         val title: String, 
         val episodes: List<EpisodeInfo> = emptyList()
-    ) : DesktopRoute, FullScreenRoute
+    ) : DesktopRoute, FullScreenRoute {
+        override val section: NavSection get() = NavSection.DOMESTIC
+    }
 }
