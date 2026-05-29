@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.*
  * 1. 将 IVideoPlayerController 的多个 StateFlow 聚合为单一的 VideoPlayerUiState
  * 2. 提供自动隐藏控制栏的计时逻辑
  * 3. 缓存预加载与播放器启动的协调
- * 4. 剧集自动连播（当资源支持选集时，播放完一集自动进入下一集）
  *
  * ## 缓存架构（纯代理模式）
  *
@@ -63,49 +62,6 @@ class VideoPlayerManager(
     /** 切片缓存状态 */
     private val _cachedSegments = MutableStateFlow<List<SegmentInfo>>(emptyList())
 
-    // ========== 剧集自动连播 ==========
-
-    /**
-     * 当前剧集列表（非空时表示支持选集，启用自动连播）。
-     * 由上层 [DomesticPlayerScreen] / [FilmPlayerScreen] 在创建 Manager 后设置。
-     */
-    private var episodeList: List<EpisodeInfo> = emptyList()
-
-    /** 当前播放的剧集索引 */
-    private var currentEpisodeIndex: Int = 0
-
-    /**
-     * 自动连播回调：当播放完一集且存在下一集时触发。
-     * 上层收到此回调后应更新 currentIndex 并调用 [open] 切换 URL。
-     */
-    var onSwitchToNextEpisode: ((nextIndex: Int, nextEpisode: EpisodeInfo) -> Unit)? = null
-
-    /** 是否启用自动连播（仅在 episodeList.size > 1 时有效） */
-    var autoPlayNextEnabled: Boolean = true
-
-    /** 是否正在等待自动连播切换（防止重复触发） */
-    private var isWaitingForNextEpisode: Boolean = false
-
-    /**
-     * 设置剧集上下文，启用自动连播能力。
-     *
-     * @param episodes 剧集列表
-     * @param currentIndex 当前播放的剧集索引
-     */
-    fun setEpisodeContext(episodes: List<EpisodeInfo>, currentIndex: Int) {
-        episodeList = episodes
-        this.currentEpisodeIndex = currentIndex
-        isWaitingForNextEpisode = false
-    }
-
-    /** 当前是否有下一集可连播 */
-    val hasNextEpisode: Boolean
-        get() = episodeList.size > 1 && currentEpisodeIndex < episodeList.size - 1
-
-    /** 当前剧集标签（如"第3集"），用于 UI 显示 */
-    val currentEpisodeLabel: String?
-        get() = episodeList.getOrNull(currentEpisodeIndex)?.label
-
     // ========== 状态聚合 ==========
 
     /** 单一事实来源：聚合后的 UI 状态 */
@@ -131,11 +87,6 @@ class VideoPlayerManager(
         val buffered = core.second
         val (vol, full, visible) = ui
 
-        // 检测播放结束，触发自动连播
-        if (playback == VideoPlaybackState.ENDED && !isWaitingForNextEpisode) {
-            triggerAutoNext()
-        }
-
         VideoPlayerUiState(
             playbackState = playback,
             currentPosition = pos,
@@ -152,28 +103,6 @@ class VideoPlayerManager(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = VideoPlayerUiState()
     )
-
-    /**
-     * 触发自动连播。
-     *
-     * 条件：
-     * 1. 有剧集列表（episodeList.size > 1）
-     * 2. 自动连播已启用（autoPlayNextEnabled == true）
-     * 3. 当前不是最后一集
-     * 4. 未处于等待切换状态（防止重复触发）
-     */
-    private fun triggerAutoNext() {
-        if (!autoPlayNextEnabled) return
-        if (episodeList.size <= 1) return
-        if (currentEpisodeIndex >= episodeList.size - 1) return
-        if (isWaitingForNextEpisode) return
-
-        isWaitingForNextEpisode = true
-        val nextIndex = currentEpisodeIndex + 1
-        val nextEpisode = episodeList[nextIndex]
-
-        onSwitchToNextEpisode?.invoke(nextIndex, nextEpisode)
-    }
 
     // ========== 播放控制 ==========
 
@@ -192,9 +121,6 @@ class VideoPlayerManager(
     fun open(url: String, headers: Map<String, String>? = null) {
         scope.launch {
             try {
-                // 重置等待状态（如果是自动连播触发的 open）
-                isWaitingForNextEpisode = false
-
                 // 步骤1：启动本地代理服务器（如果可用）
                 proxyServer?.let { server ->
                     try {
