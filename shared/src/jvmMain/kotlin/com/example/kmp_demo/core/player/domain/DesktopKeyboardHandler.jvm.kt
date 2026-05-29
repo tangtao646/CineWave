@@ -11,17 +11,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 当前活跃播放器的键盘动作处理器。
- *
- * 由播放器页面通过 [CompositionLocalProvider] 设置，
- * 由 [DesktopKeyboardHandler] 在捕获键盘事件时调用。
- *
- * 使用 CompositionLocal 而非全局单例，确保：
- * 1. 类型安全 — 编译期检查
- * 2. 作用域隔离 — 只有播放器子树能设置
- * 3. 自动生命周期 — 离开播放器页面自动恢复默认值
- *
- * 由于 AWT 的 [KeyEventDispatcher] 在非 Composable 线程中运行，
- * 无法直接读取 CompositionLocal，因此通过 [PlayerKeyActionBridge] 桥接。
+
  */
 val LocalPlayerKeyActionHandler = staticCompositionLocalOf<((PlayerKeyAction) -> Unit)?> { null }
 
@@ -48,25 +38,7 @@ internal object PlayerKeyActionBridge {
  *
  * 这是 JVM 平台特定的实现，因为 Compose Desktop 的焦点管理
  * 限制导致嵌套 Composable 无法可靠捕获键盘事件。
- *
- * ## 使用方式
- *
- * 在 [App.jvm.kt] 顶层调用一次：
- * ```kotlin
- * DesktopKeyboardHandler()
- * ```
- *
- * 播放器页面通过 [CompositionLocalProvider] 设置动作处理器：
- * ```kotlin
- * CompositionLocalProvider(LocalPlayerKeyActionHandler provides { action ->
- *     when (action) {
- *         PlayerKeyAction.TogglePlayPause -> manager.togglePlayPause()
- *         else -> {}
- *     }
- * }) {
- *     SharedVideoPlayerScreen(...)
- * }
- * ```
+
  *
  * ## 按键映射
  *
@@ -114,11 +86,11 @@ fun DesktopKeyboardHandler() {
 private fun mapKeyEventToAction(event: KeyEvent): PlayerKeyAction? {
     return when (event.keyCode) {
         KeyEvent.VK_SPACE -> PlayerKeyAction.TogglePlayPause
-        // 预留方向键映射
-        // KeyEvent.VK_RIGHT -> PlayerKeyAction.SeekForward
-        // KeyEvent.VK_LEFT -> PlayerKeyAction.SeekBackward
-        // KeyEvent.VK_UP -> PlayerKeyAction.VolumeUp
-        // KeyEvent.VK_DOWN -> PlayerKeyAction.VolumeDown
+        KeyEvent.VK_RIGHT -> PlayerKeyAction.SeekForward
+        KeyEvent.VK_LEFT -> PlayerKeyAction.SeekBackward
+        KeyEvent.VK_UP -> PlayerKeyAction.VolumeUp
+        KeyEvent.VK_DOWN -> PlayerKeyAction.VolumeDown
+        KeyEvent.VK_ESCAPE -> PlayerKeyAction.ExitFullscreen
         else -> null
     }
 }

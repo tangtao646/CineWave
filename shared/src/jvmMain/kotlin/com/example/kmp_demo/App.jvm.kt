@@ -140,26 +140,10 @@ fun App() {
             }
 
             // 注册桌面端全局键盘事件处理器（使用 AWT KeyboardFocusManager）
-            // 捕获空格键切换播放/暂停，通过全局单例 VideoPlayerKeyHandler 转发到当前播放器
+            // 捕获所有键盘快捷键（空格、方向键、ESC 等），通过 PlayerKeyActionBridge 转发到当前播放器
             DesktopKeyboardHandler()
 
-            // 全屏时监听 ESC 键退出全屏 (或者执行返回操作)
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onKeyEvent { keyEvent ->
-                        if (keyEvent.key == Key.Escape) {
-                            if (isFullScreen) {
-                                isFullScreen = false
-                                true
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        }
-                    }
-            ) {
+            Box(modifier = Modifier.fillMaxSize()) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     // ===== 左侧导航栏（全屏时隐藏）=====
                     if (!isFullScreen) {

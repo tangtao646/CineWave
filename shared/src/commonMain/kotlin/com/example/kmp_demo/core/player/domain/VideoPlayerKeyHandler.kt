@@ -15,12 +15,14 @@ package com.example.kmp_demo.core.player.domain
 sealed interface PlayerKeyAction {
     /** 切换播放/暂停 */
     data object TogglePlayPause : PlayerKeyAction
-    /** 快进（预留） */
+    /** 快进 */
     data object SeekForward : PlayerKeyAction
-    /** 快退（预留） */
+    /** 快退 */
     data object SeekBackward : PlayerKeyAction
-    /** 增加音量（预留） */
+    /** 增加音量 */
     data object VolumeUp : PlayerKeyAction
-    /** 减小音量（预留） */
+    /** 减小音量 */
     data object VolumeDown : PlayerKeyAction
+    /** 退出全屏 / 返回 */
+    data object ExitFullscreen : PlayerKeyAction
 }
