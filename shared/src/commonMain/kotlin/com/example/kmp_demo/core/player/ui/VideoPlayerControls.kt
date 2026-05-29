@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 
 /**
@@ -474,4 +475,43 @@ sealed interface PlayerAction {
     data object ToggleMute : PlayerAction
     /** 清除磁盘缓存 */
     data object ClearCache : PlayerAction
+}
+
+/**
+ * 统一的播放器动作处理函数，供各平台 Composable 调用。
+ *
+ * 消除 Android 端 [handlePlayerAction] 与 Desktop 端 [handleDesktopPlayerAction]
+ * 之间的重复代码。各平台只需调用此函数即可。
+ *
+ * ## 平台差异说明
+ * - [PlayerAction.TogglePip]：Android 使用 ExoPlayer 原生实现，Desktop 不支持，此处均为空操作
+ * - [PlayerAction.ClearCache]：Android 使用 SimpleCache，Desktop 不使用磁盘缓存，此处均为空操作
+ *
+ * @param manager 播放器管理器，所有操作通过它委托给底层 [IVideoPlayerController]
+ * @param action 要执行的动作
+ */
+internal fun handlePlayerAction(
+    manager: VideoPlayerManager,
+    action: PlayerAction,
+) {
+    when (action) {
+        PlayerAction.TogglePlayPause -> manager.togglePlayPause()
+        is PlayerAction.SeekForward -> manager.seekForward(action.seconds)
+        is PlayerAction.SeekBackward -> manager.seekBackward(action.seconds)
+        is PlayerAction.SeekToFraction -> manager.seekToFraction(action.fraction)
+        is PlayerAction.SeekToMs -> manager.seekTo(action.positionMs)
+        PlayerAction.ToggleFullScreen -> manager.toggleFullScreen()
+        PlayerAction.TogglePip -> { /* 平台自行决定是否支持画中画 */ }
+        PlayerAction.ToggleControls -> manager.toggleControls()
+        is PlayerAction.SetVolume -> manager.setVolume(action.volume)
+        PlayerAction.ToggleMute -> {
+            val currentVolume = manager.uiState.value.volume
+            if (currentVolume > 0f) {
+                manager.setVolume(0f)
+            } else {
+                manager.setVolume(1.0f)
+            }
+        }
+        PlayerAction.ClearCache -> { /* 平台自行决定缓存清理策略 */ }
+    }
 }

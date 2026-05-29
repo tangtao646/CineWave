@@ -1,9 +1,6 @@
 package com.example.kmp_demo.core.player.ui
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 
 /**
  * iOS 平台实现：使用 [VideoPlayerScreen]（compose-media-player 原生实现）。
@@ -18,7 +15,6 @@ actual fun PlatformVideoPlayerScreen(
     onBack: () -> Unit,
     headers: Map<String, String>?,
     controls: @Composable BoxScope.(state: VideoPlayerUiState, onAction: (PlayerAction) -> Unit) -> Unit,
-    topBar: @Composable (BoxScope.() -> Unit)?,
     onFullScreenChange: ((Boolean) -> Unit)?,
 ) {
     VideoPlayerScreen(
@@ -27,7 +23,6 @@ actual fun PlatformVideoPlayerScreen(
         onBack = onBack,
         headers = headers,
         controls = controls,
-        topBar = topBar,
         onFullScreenChange = onFullScreenChange,
     )
 }

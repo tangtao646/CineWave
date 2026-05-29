@@ -54,7 +54,7 @@ actual val platformModule: Module = module {
     // === Video Player Controller (ExoPlayer + SimpleCache) ===
     // factory{} 而非 single{}：每次进入播放页创建新实例，退出时 release() 销毁
     // 同时注册 IVideoPlayerController 接口和 ExoPlayerController 具体类型，
-    // 因为 PlatformVideoPlayerScreen.android.kt 中直接注入 ExoPlayerController 以访问 .player 属性
+    // 因为 VideoPlayerScreenFactory.android.kt 中直接注入 ExoPlayerController 以访问 .player 属性
     factory<IVideoPlayerController> {
         ExoPlayerController(
             context = AndroidAppContext.context,
