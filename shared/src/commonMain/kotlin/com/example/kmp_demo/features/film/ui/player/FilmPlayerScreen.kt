@@ -60,10 +60,22 @@ fun FilmPlayerScreen(
         // URL 变化会触发 PlatformVideoPlayerScreen 内部的 LaunchedEffect(url) 自动切换
     }
 
+    // 保存 Manager 引用，用于在 currentIndex 变化时同步更新剧集上下文
+    var managerRef by remember { mutableStateOf<VideoPlayerManager?>(null) }
+
     // 自动连播回调：当 Manager 检测到播放结束且有下一集时触发
     val onAutoNext: (Int, EpisodeInfo) -> Unit = { nextIndex, _ ->
         currentIndex = nextIndex
         // URL 变化触发 PlatformVideoPlayerScreen 重新加载
+    }
+
+    // 当 currentIndex 变化时（自动连播或手动切换剧集），同步更新 Manager 的剧集上下文
+    LaunchedEffect(currentIndex) {
+        managerRef?.let { manager ->
+            if (episodes.size > 1) {
+                manager.setEpisodeContext(episodes, currentIndex)
+            }
+        }
     }
 
     Box(
@@ -87,6 +99,7 @@ fun FilmPlayerScreen(
             },
             // 注入剧集上下文到 Manager，启用自动连播
             onManagerCreated = { manager ->
+                managerRef = manager
                 if (episodes.size > 1 && currentEpisode != null) {
                     manager.setEpisodeContext(episodes, currentIndex)
                     manager.onSwitchToNextEpisode = onAutoNext
