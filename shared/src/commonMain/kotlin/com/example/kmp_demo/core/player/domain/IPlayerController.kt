@@ -66,8 +66,24 @@ interface IVideoPlayerController {
     /** 设置音量 */
     suspend fun setVolume(volume: Float)
 
-    /** 切换全屏 */
-    suspend fun toggleFullScreen()
+    /**
+     * 设置全屏状态。
+     *
+     * 各平台控制器在此方法中调用已注入的 [FullscreenController.enterFullscreen] /
+     * [FullscreenController.exitFullscreen]。这样全屏的"下发指令"逻辑就内聚在
+     * 控制器中，UI 层无需关心。
+     */
+    suspend fun setFullscreen(isFullScreen: Boolean)
+
+    /**
+     * 切换全屏。
+     *
+     * 默认实现：取反当前 [isFullScreen] 状态后调用 [setFullscreen]。
+     * 各平台可覆写此方法，但通常不需要。
+     */
+    suspend fun toggleFullScreen() {
+        setFullscreen(!isFullScreen.value)
+    }
 
     /** 释放播放器资源 */
     fun release()

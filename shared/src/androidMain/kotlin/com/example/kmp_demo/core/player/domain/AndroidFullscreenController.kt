@@ -6,11 +6,18 @@ import android.content.pm.ActivityInfo
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
-class AndroidFullscreenController(private val context: Context) : FullscreenController {
+class AndroidFullscreenController(
+    private val context: Context,
+) : FullscreenController {
 
     private val activity: Activity?
         get() = context as? Activity // 或者通过 ContextWrapper 递归查找
+    private val _isFullScreen = MutableStateFlow(false)
+    override val isFullScreen: StateFlow<Boolean> = _isFullScreen.asStateFlow()
 
     override fun enterFullscreen() {
         activity?.let { act ->
@@ -19,9 +26,11 @@ class AndroidFullscreenController(private val context: Context) : FullscreenCont
             val window = act.window
             val controller = WindowCompat.getInsetsController(window, window.decorView)
 
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             // 隐藏状态栏和导航栏
             controller.hide(WindowInsetsCompat.Type.systemBars())
+            _isFullScreen.value = true
         }
     }
 
@@ -34,6 +43,7 @@ class AndroidFullscreenController(private val context: Context) : FullscreenCont
             val window = act.window
             val controller = WindowCompat.getInsetsController(window, window.decorView)
             controller.show(WindowInsetsCompat.Type.systemBars())
+            _isFullScreen.value = false
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.example.kmp_demo
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -20,17 +21,19 @@ import org.koin.core.context.startKoin
 import org.koin.core.logger.Level
 
 fun main() = application {
-    // 初始化 Koin DI（必须在 Composable 之前）
-    startKoin {
-        printLogger(Level.INFO)
-        modules(
-            commonModule,
-            platformModule,
-            coreVideosourceModule,
-            radioModuleJvm,
-            filmModuleJvm,
-            domesticModuleJvm,
-        )
+    // 初始化 Koin DI（仅在首次 composition 时执行，避免 recomposition 重复调用）
+    remember {
+        startKoin {
+            printLogger(Level.INFO)
+            modules(
+                commonModule,
+                platformModule,
+                coreVideosourceModule,
+                radioModuleJvm,
+                filmModuleJvm,
+                domesticModuleJvm,
+            )
+        }
     }
 
     val windowState = WindowState(
@@ -44,7 +47,11 @@ fun main() = application {
         state = windowState,
     ) {
         // 注入 Desktop 全屏控制器
-        val fullscreenController = DesktopFullscreenController(windowState)
+        val fullscreenController = remember(windowState) {
+            DesktopFullscreenController(
+                windowState = windowState,
+            )
+        }
         CompositionLocalProvider(
             LocalFullscreenController provides fullscreenController
         ) {

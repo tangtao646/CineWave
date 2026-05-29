@@ -16,6 +16,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import com.example.kmp_demo.core.player.cache.ExoPlayerCache
+import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.VideoPlaybackState
 import kotlinx.coroutines.*
@@ -52,7 +53,9 @@ import kotlinx.coroutines.flow.asStateFlow
 class ExoPlayerController(
     private val context: Context,
     private val exoCache: ExoPlayerCache,
+    private val fullscreenController: FullscreenController? = null
 ) : IVideoPlayerController {
+
 
     companion object {
         private const val TAG = "ExoPlayerController"
@@ -179,7 +182,8 @@ class ExoPlayerController(
                             ((player.bufferedPosition.toFloat() / dur) * 100)
                                 .toInt().coerceIn(0, 100)
                     }
-                } catch (_: Exception) { /* 播放器尚未就绪 */ }
+                } catch (_: Exception) { /* 播放器尚未就绪 */
+                }
                 delay(POLL_INTERVAL_MS)
             }
         }
@@ -234,7 +238,9 @@ class ExoPlayerController(
     }
 
     override suspend fun pause() {
-        try { player.pause() } catch (e: Exception) {
+        try {
+            player.pause()
+        } catch (e: Exception) {
             Log.e(TAG, "pause() error: ${e.message}")
         }
     }
@@ -252,7 +258,9 @@ class ExoPlayerController(
     }
 
     override suspend fun seekTo(positionMs: Long) {
-        try { player.seekTo(positionMs) } catch (e: Exception) {
+        try {
+            player.seekTo(positionMs)
+        } catch (e: Exception) {
             Log.e(TAG, "seekTo() error: ${e.message}")
         }
     }
@@ -285,8 +293,14 @@ class ExoPlayerController(
         }
     }
 
-    override suspend fun toggleFullScreen() {
-        _isFullScreen.value = !_isFullScreen.value
+
+    override suspend fun setFullscreen(isFullScreen: Boolean) {
+        _isFullScreen.value = isFullScreen
+        if (isFullScreen) {
+            fullscreenController?.enterFullscreen()
+        } else {
+            fullscreenController?.exitFullscreen()
+        }
     }
 
     override fun release() {

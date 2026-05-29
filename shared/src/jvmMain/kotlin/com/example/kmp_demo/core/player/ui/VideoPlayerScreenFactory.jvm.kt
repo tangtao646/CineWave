@@ -5,10 +5,12 @@ import androidx.compose.runtime.*
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
+import com.example.kmp_demo.core.player.domain.LocalFullscreenController
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
 import org.koin.compose.koinInject
+import org.koin.core.parameter.parametersOf
 
 /**
  * Desktop 平台视频播放器屏幕 — 基于 VLCJ (libvlc)。
@@ -21,6 +23,10 @@ import org.koin.compose.koinInject
  * - 播放控制：通过 [IVideoPlayerController] 接口与 commonMain 解耦
  * - 生命周期：DisposableEffect 管理播放器资源的创建与释放
  *
+ * ## 全屏架构
+ * 全屏切换由 [DesktopVideoPlayerController.setFullscreen] 内部调用
+ * [LocalFullscreenController] 实现，UI 层不再手动管理全屏状态。
+ * 符合依赖倒置原则：端侧上层只管下发指令，具体实现下放到控制器。
  *
  * @see DesktopVideoPlayerController
  * @see VlcjVideoSurface
@@ -35,9 +41,14 @@ import org.koin.compose.koinInject
     controls: @Composable BoxScope.(state: VideoPlayerUiState, onAction: (PlayerAction) -> Unit) -> Unit,
     onFullScreenChange: ((Boolean) -> Unit)?,
 ) {
-    val controller: IVideoPlayerController = koinInject()
+    val fullscreenController = LocalFullscreenController.current
+
+    // ========== 从 Koin 获取（由 DI 管理生命周期） ==========
+    // 通过 parametersOf 将 CompositionLocal 中的 FullscreenController 传入构造函数
+    val controller: IVideoPlayerController = koinInject(parameters = { parametersOf(fullscreenController) })
     val proxyServer: CacheProxyServer = koinInject()
     val segmentCacheTracker: SegmentCacheTracker = koinInject()
+
     val manager = remember(controller, proxyServer, segmentCacheTracker) {
         VideoPlayerManager(
             controller = controller,
