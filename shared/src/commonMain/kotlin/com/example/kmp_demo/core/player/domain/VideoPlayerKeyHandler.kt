@@ -1,23 +1,26 @@
 package com.example.kmp_demo.core.player.domain
 
 /**
- * 桌面端视频播放器键盘事件处理器。
+ * 桌面端视频播放器键盘动作定义。
  *
- * 由于 Compose Desktop 的焦点管理限制，嵌套的 Composable 无法可靠地
- * 捕获键盘事件。因此使用全局可变的 [onSpaceKey] 引用，让播放器页面
- * 在挂载时注册回调，在 [App.jvm.kt] 顶层捕获空格键时调用。
+ * 定义所有支持的键盘快捷键动作，后续扩展方向键时只需在此添加新动作。
  *
- * 使用方式：
- * 1. [SharedVideoPlayerScreen] 在挂载时设置 [onSpaceKey] 回调
- * 2. [App.jvm.kt] 的顶层 [Box] 在空格键按下时调用 [onSpaceKey]()
- *
- * 这是一个线程安全的单例，使用 @Volatile 确保跨线程可见性。
+ * 当前支持：
+ * - [TogglePlayPause]：空格键，切换播放/暂停
+ * - [SeekForward]：右方向键，快进（预留）
+ * - [SeekBackward]：左方向键，快退（预留）
+ * - [VolumeUp]：上方向键，增加音量（预留）
+ * - [VolumeDown]：下方向键，减小音量（预留）
  */
-object VideoPlayerKeyHandler {
-    /**
-     * 当前活跃播放器的空格键回调。
-     * 由 [SharedVideoPlayerScreen] 在挂载时设置，卸载时置空。
-     */
-    @Volatile
-    var onSpaceKey: (() -> Unit)? = null
+sealed interface PlayerKeyAction {
+    /** 切换播放/暂停 */
+    data object TogglePlayPause : PlayerKeyAction
+    /** 快进（预留） */
+    data object SeekForward : PlayerKeyAction
+    /** 快退（预留） */
+    data object SeekBackward : PlayerKeyAction
+    /** 增加音量（预留） */
+    data object VolumeUp : PlayerKeyAction
+    /** 减小音量（预留） */
+    data object VolumeDown : PlayerKeyAction
 }

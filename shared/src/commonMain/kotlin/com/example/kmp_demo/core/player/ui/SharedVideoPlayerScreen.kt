@@ -27,10 +27,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import com.example.kmp_demo.core.network.createHttpClient
 import com.example.kmp_demo.core.player.domain.LocalFullscreenController
 import com.example.kmp_demo.core.player.domain.ShareUrlResolver
-import com.example.kmp_demo.core.player.domain.VideoPlayerKeyHandler
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
-import com.example.kmp_demo.core.player.domain.VideoPlaybackState
 
 /**
  * 平台间共享的视频播放器 UI 骨架。
@@ -50,8 +48,9 @@ import com.example.kmp_demo.core.player.domain.VideoPlaybackState
  * ```
  *
  * ## 键盘快捷键
- * - **空格键**：切换播放/暂停（桌面端）
- * - **ESC 键**：退出全屏（由 [App.jvm.kt] 顶层处理）
+ * 桌面端键盘快捷键由 [DesktopKeyboardHandler] 统一管理，
+ * 播放器页面通过 [LocalPlayerKeyActionHandler] CompositionLocal 注册动作处理器。
+ * 参见 [com.example.kmp_demo.core.player.domain.DesktopKeyboardHandler]。
  *
  * @param url 视频播放地址
  * @param title 视频标题
@@ -103,29 +102,6 @@ fun SharedVideoPlayerScreen(
             httpClient.close()
             onPlatformDispose()
             manager.release()
-        }
-    }
-
-    // ========== 桌面端键盘事件处理器 ==========
-    // 使用全局单例 VideoPlayerKeyHandler 注册空格键回调。
-    // 由于 Compose Desktop 焦点管理限制，嵌套 Composable 无法可靠捕获键盘事件，
-    // 因此通过全局引用让 App.jvm.kt 顶层 Box 在捕获空格键时调用此回调。
-    // 使用 DisposableEffect 确保挂载时注册、卸载时清除。
-    DisposableEffect(manager, uiState.playbackState) {
-        val onSpaceKey: () -> Unit = {
-            // 仅在播放器处于活跃状态时响应（非 IDLE、非 ERROR）
-            if (uiState.playbackState != VideoPlaybackState.IDLE &&
-                uiState.playbackState != VideoPlaybackState.ERROR
-            ) {
-                handlePlayerAction(manager, PlayerAction.TogglePlayPause)
-            }
-        }
-        VideoPlayerKeyHandler.onSpaceKey = onSpaceKey
-        onDispose {
-            // 只清除自己注册的回调，避免误删其他播放器的
-            if (VideoPlayerKeyHandler.onSpaceKey === onSpaceKey) {
-                VideoPlayerKeyHandler.onSpaceKey = null
-            }
         }
     }
 
