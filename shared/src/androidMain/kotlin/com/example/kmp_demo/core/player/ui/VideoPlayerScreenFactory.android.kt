@@ -12,18 +12,18 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
+import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.LocalFullscreenController
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 import com.example.kmp_demo.core.player.platform.ExoPlayerController
 import org.koin.compose.koinInject
-import androidx.compose.runtime.collectAsState
+import org.koin.core.parameter.parametersOf
 
 /**
  * Android 平台统一的视频播放器屏幕实现。
@@ -32,12 +32,16 @@ import androidx.compose.runtime.collectAsState
  * 使用 ExoPlayer 原生 SimpleCache + CacheDataSource 方案，
  * 无需本地 HTTP 代理，无端口竞态，真正流式缓存。
  *
+ * ## 全屏架构
+ * 全屏切换由 [ExoPlayerController.setFullscreen] 内部调用
+ * [LocalFullscreenController] 实现，UI 层不再手动管理全屏状态。
+ * 符合依赖倒置原则：端侧上层只管下发指令，具体实现下放到控制器。
+ *
  * @param url 视频播放地址
  * @param title 视频标题
  * @param onBack 返回回调
  * @param headers 自定义请求头
  * @param controls 自定义控制栏
- * @param topBar 自定义顶栏
  * @param onFullScreenChange 全屏状态变化回调
  */
 @Composable
@@ -52,7 +56,8 @@ actual fun PlatformVideoPlayerScreen(
     val fullscreenController = LocalFullscreenController.current
 
     // ========== 从 Koin 获取（由 DI 管理生命周期） ==========
-    val controller: ExoPlayerController = koinInject()
+    // 通过 parametersOf 将 CompositionLocal 中的 FullscreenController 传入构造函数
+    val controller: IVideoPlayerController = koinInject(parameters = { parametersOf(fullscreenController) })
     val segmentCacheTracker: SegmentCacheTracker = koinInject()
 
     // ========== 播放器管理器（无代理服务器） ==========
@@ -67,15 +72,6 @@ actual fun PlatformVideoPlayerScreen(
     // ========== 横竖屏检测 ==========
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-
-    // ========== 全屏处理 ==========
-    LaunchedEffect(manager.uiState.collectAsState().value.isFullScreen) {
-        if (manager.uiState.value.isFullScreen) {
-            fullscreenController.enterFullscreen()
-        } else {
-            fullscreenController.exitFullscreen()
-        }
-    }
 
     // ========== 返回键处理 ==========
     BackHandler {
@@ -106,7 +102,7 @@ actual fun PlatformVideoPlayerScreen(
             // ========== 平台插槽：视频 Surface ==========
             videoSurface = { modifier ->
                 VideoPlayerSurface(
-                    player = controller.player,
+                    player = (controller as ExoPlayerController).player,
                     modifier = modifier,
                 )
             },

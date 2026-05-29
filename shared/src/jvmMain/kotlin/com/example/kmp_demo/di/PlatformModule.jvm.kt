@@ -4,10 +4,14 @@ import com.example.kmp_demo.core.player.cache.CacheProxyServer
 import com.example.kmp_demo.core.player.cache.CacheProxyServerJvm
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
+import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.features.radio.domain.player.IRadioPlayerController
 import com.example.kmp_demo.features.radio.player.DesktopRadioPlayerController
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -48,7 +52,7 @@ actual val platformModule: Module = module {
 
     // === Video Player Controller (VLCJ) ===
     // 使用 VLCJ (libvlc) 实现桌面端视频播放，支持广泛的音视频格式。
-    
+
     // 1. MediaPlayerFactory 是重量级对象，全局共享一个实例以节省资源并避免多次加载 native 库
     single<MediaPlayerFactory> {
         MediaPlayerFactory(
@@ -58,12 +62,16 @@ actual val platformModule: Module = module {
         )
     }
 
+
+
     // 2. 播放器控制器必须是 factory，因为每次进入播放页都需要一个新的 MediaPlayer 实例。
     // 旧的实例会在 PlatformVideoPlayerScreen 退出时被 release() 销毁。
-    factory<IVideoPlayerController> {
+    // fullscreenController 由平台适配器通过 parametersOf() 传入
+    factory<IVideoPlayerController> { params ->
         DesktopVideoPlayerController(
             mediaPlayerFactory = get(),
             proxyServer = get(),
+            fullscreenController = params.getOrNull(),
         )
     }
 

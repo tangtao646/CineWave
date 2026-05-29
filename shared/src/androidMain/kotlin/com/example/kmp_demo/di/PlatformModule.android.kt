@@ -9,9 +9,13 @@ import com.example.kmp_demo.core.data.local.room.getRoomDatabase
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.ExoPlayerCache
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
+import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.platform.ExoPlayerController
 import com.example.kmp_demo.core.player.platform.getDefaultCacheDir
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.koin.core.module.Module
 import org.koin.dsl.module
 
@@ -51,20 +55,17 @@ actual val platformModule: Module = module {
         SegmentCacheTracker(diskCache = get())
     }
 
+
+
     // === Video Player Controller (ExoPlayer + SimpleCache) ===
     // factory{} 而非 single{}：每次进入播放页创建新实例，退出时 release() 销毁
-    // 同时注册 IVideoPlayerController 接口和 ExoPlayerController 具体类型，
-    // 因为 VideoPlayerScreenFactory.android.kt 中直接注入 ExoPlayerController 以访问 .player 属性
-    factory<IVideoPlayerController> {
+    // fullscreenController 由平台适配器通过 parametersOf() 传入
+    factory<IVideoPlayerController> { params ->
         ExoPlayerController(
             context = AndroidAppContext.context,
             exoCache = get(),
+            fullscreenController = params.getOrNull(),
         )
     }
-    factory<ExoPlayerController> {
-        ExoPlayerController(
-            context = AndroidAppContext.context,
-            exoCache = get(),
-        )
-    }
+
 }
