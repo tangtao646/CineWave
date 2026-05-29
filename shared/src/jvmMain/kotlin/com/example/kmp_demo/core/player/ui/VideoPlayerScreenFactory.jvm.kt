@@ -6,8 +6,12 @@ import com.example.kmp_demo.core.player.cache.CacheProxyServer
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.LocalFullscreenController
+import com.example.kmp_demo.core.player.domain.LocalPlayerKeyActionHandler
+import com.example.kmp_demo.core.player.domain.PlayerKeyAction
+import com.example.kmp_demo.core.player.domain.PlayerKeyActionBridge
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
+import com.example.kmp_demo.core.player.domain.VideoPlaybackState
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
@@ -63,25 +67,50 @@ import org.koin.core.parameter.parametersOf
         onManagerCreated?.invoke(manager)
     }
 
-    SharedVideoPlayerScreen(
-        url = url,
-        title = title,
-        onBack = onBack,
-        headers = headers,
-        manager = manager,
-        controls = controls,
-        onFullScreenChange = onFullScreenChange,
-        // ========== 平台插槽：视频 Surface ==========
-        videoSurface = { modifier ->
-            val vlcjController = controller as DesktopVideoPlayerController
-            VlcjVideoSurface(
-                controller = vlcjController,
-                modifier = modifier,
-            )
-        },
-        // ========== 平台插槽：资源释放 ==========
-        onPlatformDispose = {
-            // Desktop 无需额外释放逻辑
-        },
-    )
+    // 通过 CompositionLocal 注册桌面端键盘动作处理器。
+    // 由 DesktopKeyboardHandler 在捕获键盘事件时调用。
+    // 使用 CompositionLocalProvider 确保离开播放器页面时自动恢复默认值。
+    // 同时通过 PlayerKeyActionBridge 桥接到 AWT 事件线程。
+    val uiState by manager.uiState.collectAsState()
+    val keyActionHandler: (PlayerKeyAction) -> Unit = { action ->
+        // 仅在播放器处于活跃状态时响应（非 IDLE、非 ERROR）
+        if (uiState.playbackState != VideoPlaybackState.IDLE &&
+            uiState.playbackState != VideoPlaybackState.ERROR
+        ) {
+            when (action) {
+                PlayerKeyAction.TogglePlayPause -> handlePlayerAction(manager, PlayerAction.TogglePlayPause)
+                PlayerKeyAction.SeekForward -> { /* 预留：快进 */ }
+                PlayerKeyAction.SeekBackward -> { /* 预留：快退 */ }
+                PlayerKeyAction.VolumeUp -> { /* 预留：增加音量 */ }
+                PlayerKeyAction.VolumeDown -> { /* 预留：减小音量 */ }
+            }
+        }
+    }
+
+    // 同步写入桥接器，供 AWT 事件线程读取
+    PlayerKeyActionBridge.handler.set(keyActionHandler)
+
+    CompositionLocalProvider(LocalPlayerKeyActionHandler provides keyActionHandler) {
+        SharedVideoPlayerScreen(
+            url = url,
+            title = title,
+            onBack = onBack,
+            headers = headers,
+            manager = manager,
+            controls = controls,
+            onFullScreenChange = onFullScreenChange,
+            // ========== 平台插槽：视频 Surface ==========
+            videoSurface = { modifier ->
+                val vlcjController = controller as DesktopVideoPlayerController
+                VlcjVideoSurface(
+                    controller = vlcjController,
+                    modifier = modifier,
+                )
+            },
+            // ========== 平台插槽：资源释放 ==========
+            onPlatformDispose = {
+                // Desktop 无需额外释放逻辑
+            },
+        )
+    }
 }
