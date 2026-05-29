@@ -19,43 +19,40 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import com.example.kmp_demo.core.network.createHttpClient
-import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 
 /**
  * 平台间共享的视频播放器 UI 骨架。
  *
- * 将 Android 与 Desktop 端重复的 UI 布局（黑色背景、手势检测、控制栏动画、
- * 顶部栏、中央播放按钮等）提取到此共享 Composable 中，各平台通过插槽参数
- * 注入平台特定的实现。
+ * 重构后：纯 UI 组件，不包含任何副作用逻辑。
+ * - 移除 LaunchedEffect(url) { manager.open() }
+ * - 移除 ShareUrlResolver 的创建和调用
+ * - 移除 httpClient 的创建和关闭
+ * - 只负责 UI 布局、手势、动画
+ *
+ * 副作用逻辑上移到 [PlatformVideoPlayerScreen]（平台层）。
  *
  * ## 架构
  * ```
- * SharedVideoPlayerScreen          ← commonMain（共享 UI 骨架）
+ * SharedVideoPlayerScreen          ← commonMain（纯 UI 骨架）
  *   ├─ videoSurface: 插槽          ← 平台提供（ExoPlayer Surface / VLCJ Surface）
- *   ├─ platformEffects: 插槽       ← 平台提供（BackHandler、keepScreenOn 等）
  *   ├─ topBarModifier: 参数        ← 平台提供（Android 的 statusBars padding）
  *   ├─ bottomBarModifier: 参数     ← 平台提供（Android 的 systemBars padding）
  *   └─ onPlatformDispose: 回调     ← 平台提供（额外资源释放）
  * ```
  *
- *
- * @param url 视频播放地址
+ * @param url 视频播放地址（仅用于 UI 显示，不触发 manager.open()）
  * @param title 视频标题
  * @param onBack 返回回调
- * @param headers 自定义请求头
  * @param manager 播放器管理器（由平台层创建并传入）
  * @param controls 自定义控制栏
  * @param onFullScreenChange 全屏状态变化回调
  * @param videoSurface 平台特定的视频渲染 Surface
- * @param platformEffects 平台特定的副作用（如 BackHandler、屏幕常亮）
  * @param topBarModifier 顶部栏的额外修饰符（如 Android 的 statusBars padding）
  * @param bottomBarModifier 底部控制栏的额外修饰符（如 Android 的 systemBars padding）
  * @param onPlatformDispose 平台特定的资源释放回调
@@ -65,7 +62,6 @@ fun SharedVideoPlayerScreen(
     url: String,
     title: String,
     onBack: () -> Unit,
-    headers: Map<String, String>? = null,
     manager: VideoPlayerManager,
     controls: @Composable BoxScope.(state: VideoPlayerUiState, onAction: (PlayerAction) -> Unit) -> Unit,
     onFullScreenChange: ((Boolean) -> Unit)? = null,
@@ -77,15 +73,6 @@ fun SharedVideoPlayerScreen(
 ) {
     val uiState by manager.uiState.collectAsState()
 
-    // ========== 分享链接解析器 ==========
-    val httpClient = remember { createHttpClient() }
-    val shareUrlResolver = remember(httpClient) { ShareUrlResolver(httpClient) }
-    // ========== 打开视频 ==========
-    LaunchedEffect(url, headers) {
-        val resolvedUrl = shareUrlResolver.resolve(url, headers)
-        manager.open(resolvedUrl, headers)
-    }
-
     // ========== 全屏状态变化回调 ==========
     LaunchedEffect(uiState.isFullScreen) {
         onFullScreenChange?.invoke(uiState.isFullScreen)
@@ -94,7 +81,6 @@ fun SharedVideoPlayerScreen(
     // ========== 释放资源 ==========
     DisposableEffect(manager) {
         onDispose {
-            httpClient.close()
             onPlatformDispose()
             manager.release()
         }
@@ -167,7 +153,6 @@ fun SharedVideoPlayerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(topBarModifier)
-
                 ) {
                     VideoPlayerTopBar(
                         title = title,

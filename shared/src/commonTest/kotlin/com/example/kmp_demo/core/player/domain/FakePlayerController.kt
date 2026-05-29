@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.*
  * 模拟 [IPlayerController] 的行为，不依赖任何平台特定的播放引擎。
  * 所有状态变化通过协程和 Flow 驱动，支持手动推进时间线以测试 seek、play/pause 等操作。
  */
-class FakePlayerController : IPlayerController {
+class FakePlayerController : IVideoPlayerController {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -114,6 +114,10 @@ class FakePlayerController : IPlayerController {
     override suspend fun setVolume(volume: Float) {
         lastCalledMethod = "setVolume"
         _volume.value = volume.coerceIn(0f, 1f)
+    }
+
+    override suspend fun setFullscreen(isFullScreen: Boolean) {
+
     }
 
     override suspend fun toggleFullScreen() {

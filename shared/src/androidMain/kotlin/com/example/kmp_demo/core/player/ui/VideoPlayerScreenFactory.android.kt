@@ -18,8 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
+import com.example.kmp_demo.core.player.domain.CacheOrchestrator
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.LocalFullscreenController
+import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 import com.example.kmp_demo.core.player.platform.ExoPlayerController
@@ -29,14 +31,20 @@ import org.koin.core.parameter.parametersOf
 /**
  * Android 平台统一的视频播放器屏幕实现。
  *
+ * 重构后职责：
+ * 1. 创建 [VideoPlayerManager]（组合 [CacheOrchestrator]）
+ * 2. 通过 DI 获取 [ShareUrlResolver]，在 LaunchedEffect 中解析 URL
+ * 3. LaunchedEffect(url) 中调用 manager.open()（副作用集中在此层）
+ * 4. 调用 [SharedVideoPlayerScreen]（纯 UI）
+ *
  * ## 缓存架构
  * 使用 ExoPlayer 原生 SimpleCache + CacheDataSource 方案，
  * 无需本地 HTTP 代理，无端口竞态，真正流式缓存。
+ * [CacheOrchestrator] 在此处仅用于切片追踪，不启动代理服务器。
  *
  * ## 全屏架构
  * 全屏切换由 [ExoPlayerController.setFullscreen] 内部调用
  * [LocalFullscreenController] 实现，UI 层不再手动管理全屏状态。
- * 符合依赖倒置原则：端侧上层只管下发指令，具体实现下放到控制器。
  *
  * @param url 视频播放地址
  * @param title 视频标题
@@ -59,22 +67,35 @@ actual fun PlatformVideoPlayerScreen(
     val fullscreenController = LocalFullscreenController.current
 
     // ========== 从 Koin 获取（由 DI 管理生命周期） ==========
-    // 通过 parametersOf 将 CompositionLocal 中的 FullscreenController 传入构造函数
     val controller: IVideoPlayerController = koinInject(parameters = { parametersOf(fullscreenController) })
     val segmentCacheTracker: SegmentCacheTracker = koinInject()
+    val shareUrlResolver: ShareUrlResolver = koinInject()
 
-    // ========== 播放器管理器（无代理服务器） ==========
-    val manager = remember(controller, segmentCacheTracker) {
-        VideoPlayerManager(
-            controller = controller,
+    // ========== 创建 CacheOrchestrator（Android 无代理，仅用于切片追踪） ==========
+    val cacheOrchestrator = remember(segmentCacheTracker) {
+        CacheOrchestrator(
             proxyServer = null,          // Android 使用 SimpleCache，无需代理
             segmentCacheTracker = segmentCacheTracker,
         )
     }
 
-    // 通知上层 Manager 已创建，用于注入剧集上下文等
+    // ========== 创建 VideoPlayerManager ==========
+    val manager = remember(controller, cacheOrchestrator) {
+        VideoPlayerManager(
+            controller = controller,
+            cacheOrchestrator = cacheOrchestrator,
+        )
+    }
+
+    // 通知上层 Manager 已创建
     LaunchedEffect(manager) {
         onManagerCreated?.invoke(manager)
+    }
+
+    // ========== 副作用集中在此：解析 URL + 打开视频 ==========
+    LaunchedEffect(url, headers) {
+        val resolvedUrl = shareUrlResolver.resolve(url, headers)
+        manager.open(resolvedUrl, headers)
     }
 
     // ========== 横竖屏检测 ==========
@@ -103,7 +124,6 @@ actual fun PlatformVideoPlayerScreen(
             url = url,
             title = title,
             onBack = onBack,
-            headers = headers,
             manager = manager,
             controls = controls,
             onFullScreenChange = onFullScreenChange,
