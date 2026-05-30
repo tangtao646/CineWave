@@ -3,6 +3,7 @@ package com.example.kmp_demo.core.player.domain
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +30,8 @@ class ControlsAutoHideService {
     /** 控制栏是否可见 */
     val isControlsVisible: StateFlow<Boolean> = _isControlsVisible.asStateFlow()
 
+    /** 复用类级别协程作用域，避免每次 restartTimer 创建新 scope */
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var autoHideJob: Job? = null
     private var autoHideDelayMs: Long = 3000L
 
@@ -74,7 +77,7 @@ class ControlsAutoHideService {
 
     private fun restartTimer() {
         autoHideJob?.cancel()
-        autoHideJob = CoroutineScope(Dispatchers.Main).launch {
+        autoHideJob = scope.launch {
             delay(autoHideDelayMs)
             _isControlsVisible.value = false
         }

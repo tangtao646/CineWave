@@ -39,7 +39,7 @@ import kotlinx.coroutines.runBlocking
 class CacheOrchestrator(
     private val proxyServer: CacheProxyServer? = null,
     private val segmentCacheTracker: SegmentCacheTracker? = null,
-    private val httpClient: HttpClient? = null,
+    private val httpClient: HttpClient,
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val _cachedSegments = MutableStateFlow<List<SegmentInfo>>(emptyList())
@@ -130,23 +130,16 @@ class CacheOrchestrator(
 
     /**
      * 下载 M3U8 内容，用于解析切片列表。
-     * 优先使用注入的 HttpClient（复用 Koin 配置），否则创建临时 client。
+     * 复用注入的 HttpClient（来自 Koin 配置，带拦截器、超时等）。
      */
     private suspend fun downloadM3u8Content(
         url: String,
         headers: Map<String, String>?
     ): String {
-        val client = httpClient ?: com.example.kmp_demo.core.network.createHttpClient()
-        try {
-            return client.get(url) {
-                headers?.forEach { (k, v) ->
-                    header(k, v)
-                }
-            }.bodyAsText()
-        } finally {
-            if (httpClient == null) {
-                (client as io.ktor.client.HttpClient).close()
+        return httpClient.get(url) {
+            headers?.forEach { (k, v) ->
+                header(k, v)
             }
-        }
+        }.bodyAsText()
     }
 }

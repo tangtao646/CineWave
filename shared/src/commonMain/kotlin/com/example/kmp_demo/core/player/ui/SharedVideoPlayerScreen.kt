@@ -35,7 +35,6 @@ import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
  * - 移除 httpClient 的创建和关闭
  * - 只负责 UI 布局、手势、动画
  *
- * 副作用逻辑上移到 [PlatformVideoPlayerScreen]（平台层）。
  *
  * ## 架构
  * ```

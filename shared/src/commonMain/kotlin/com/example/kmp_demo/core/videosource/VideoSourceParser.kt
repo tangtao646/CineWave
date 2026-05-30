@@ -14,6 +14,8 @@ import com.example.kmp_demo.core.videosource.domain.VideoSource
  * 职责单一：仅负责数据格式的解析与转换。
  */
 object VideoSourceParser {
+    private val DIRECT_EXTENSIONS = setOf(".m3u8", ".mp4", ".flv", ".ts", ".webm", ".mkv")
+
 
     /**
      * 将单个站点的 API 响应解析为 [VideoSource] 列表。
@@ -29,49 +31,90 @@ object VideoSourceParser {
         }
     }
 
+
     /**
-     * 解析 vod_play_url 字符串。
-     *
-     * 格式: "episode1$url1#episode2$url2#episode3$url3"
-     * 其中 "$" 分隔剧集名与 URL，"#" 分隔不同剧集。
-     *
-     * @param playUrlRaw 原始播放 URL 字符串
-     * @param siteName 站点名称
-     * @return 解析后的 [VideoSource] 列表
+     * 核心清洗算法：精准提取最后一个有效的直链地址
+     */
+    fun sanitizeVideoUrl(urlRaw: String): String {
+        if (urlRaw.isBlank()) return urlRaw
+
+        // 1. 抓取该脏串中所有潜伏的 http(s) 链接
+        val httpUrlPattern = Regex("""https?://[^\s"'<>，。、；：（）()【】\[\]{}#]+""")
+        val allMatches = httpUrlPattern.findAll(urlRaw).map { it.value.trim() }.toList()
+
+        if (allMatches.isEmpty()) return urlRaw
+
+        // 2. 核心鲁棒策略：从后往前找（倒序遍历），谁带视频后缀，谁就是真的视频流
+        for (i in allMatches.indices.reversed()) {
+            val currentUrl = allMatches[i]
+            val lowerUrl = currentUrl.lowercase()
+            if (DIRECT_EXTENSIONS.any { lowerUrl.contains(it) }) {
+                return currentUrl
+            }
+        }
+
+        // 3. 兜底策略：如果都没带后缀（某些防盗链动态接口），直接拿最后一个 http 链接
+        return allMatches.last()
+    }
+
+    /**
+     * 解析整个剧集文本
      */
     fun parsePlayUrl(playUrlRaw: String, siteName: String): List<VideoSource> {
         if (playUrlRaw.isBlank()) return emptyList()
 
-        // 按 "#" 分割不同剧集
-        val episodes = playUrlRaw.split("#")
-        val results = mutableListOf<VideoSource>()
+        return playUrlRaw.split("#")
+            .filter { it.isNotBlank() }
+            .mapNotNull { episodeRaw ->
+                val trimmed = episodeRaw.trim()
 
-        for (episode in episodes) {
-            val parts = episode.split("$", limit = 2)
-            if (parts.size == 2) {
-                val episodeName = parts[0].trim()
-                val url = parts[1].trim()
+                // 1. 直接用 "$" 把这一个剧集的所有片段切开，并过滤掉空碎片
+                // 例如切成: ["https://vip.../share/xxx", "第01集", "https://vip.../index.m3u8"]
+                val tokens = trimmed.split("$").filter { it.isNotBlank() }
+                if (tokens.isEmpty()) return@mapNotNull null
 
-                if (url.isNotBlank()) {
-                    results.add(
-                        VideoSource(
-                            url = url,
-                            quality = episodeName,
-                            format = detectFormat(url),
-                            size = 0L,
-                            sourceSite = siteName,
-                        )
-                    )
+                // 2. 寻找真正的视频直链（带 m3u8/.mp4 等后缀的碎片）
+                // 资源站的真直链必然在最后面，我们从后往前找
+                var realVideoUrl = ""
+                for (i in tokens.indices.reversed()) {
+                    val token = tokens[i].trim()
+                    if (DIRECT_EXTENSIONS.any { token.lowercase().contains(it) }) {
+                        realVideoUrl = token
+                        break
+                    }
                 }
-            }
-        }
 
-        return results
+                // 3. 如果没找到带后缀的，就退而求其次，拿最后一个以 http 开头的碎片（兜底方案）
+                if (realVideoUrl.isBlank()) {
+                    realVideoUrl = tokens.lastOrNull { it.trim().startsWith("http", ignoreCase = true) }?.trim() ?: ""
+                }
+
+                // 如果连一个合法的 URL 碎片都没捞到，说明这行数据彻底报废
+                if (realVideoUrl.isBlank()) return@mapNotNull null
+
+                // 4. 寻找剧集名称
+                // 既然找到了 realVideoUrl，那么只要不是这个 URL，且不以 http 开头的非空字符串，就是我们要的剧集名（比如 "第01集"）
+                // 我们同样从后往前找离视频链接最近的那个人类文本
+                var episodeName = "默认"
+                for (i in tokens.indices.reversed()) {
+                    val token = tokens[i].trim()
+                    if (token != realVideoUrl && !token.startsWith("http", ignoreCase = true)) {
+                        episodeName = token
+                        break
+                    }
+                }
+
+                // 5. 组装输出
+                VideoSource(
+                    url = realVideoUrl,
+                    quality = episodeName, // 成功提取出 "第01集"
+                    format = detectFormat(realVideoUrl),
+                    size = 0L,
+                    sourceSite = siteName,
+                )
+            }
     }
 
-    /**
-     * 根据 URL 后缀检测视频格式。
-     */
     private fun detectFormat(url: String): String {
         val lower = url.lowercase()
         return when {
