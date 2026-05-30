@@ -14,6 +14,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.response.respondBytesWriter
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.utils.io.readAvailable
@@ -75,149 +76,135 @@ class CacheProxyServerJvm(
 
     private val m3u8Handler = lazy { M3u8RequestHandler(httpClient, diskCache) }
 
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
     override suspend fun start(): Int {
         stop()
-
         DebugLog.d(TAG, "start() called, binding to port $PROXY_PORT...")
 
         val engine = embeddedServer(Netty, port = PROXY_PORT) {
             routing {
-
-                // ─── M3U8 路由 ───
-                get("/m3u8") {
-                    val originalUrl = call.request.queryParameters["url"]
-                        ?: return@get call.respondText(
-                            "Missing 'url' parameter",
-                            status = HttpStatusCode.BadRequest
-                        )
-                    DebugLog.d(TAG, "/m3u8 request received, originalUrl=$originalUrl")
-                    val headers = call.request.queryParameters.entries()
-                        .filter { it.key != "url" }
-                        .associate { it.key to it.value.joinToString(",") }
-                        .ifEmpty { null }
-
-                    try {
-                        val content = m3u8Handler.value.handle(originalUrl, headers, PROXY_PORT)
-                        DebugLog.d(TAG, "/m3u8 response prepared, length=${content.length}")
-                        call.respondText(
-                            content,
-                            contentType = ContentType("application", "vnd.apple.mpegurl")
-                        )
-                    } catch (e: InvalidM3u8Exception) {
-                        DebugLog.d(TAG, "/m3u8 invalid content: ${e.message}")
-                        // 返回 502 Bad Gateway，让 VLC 触发 error 事件
-                        call.respondText(
-                            "#EXTM3U\n#EXT-X-ERROR:${e.message}",
-                            contentType = ContentType("application", "vnd.apple.mpegurl"),
-                            status = HttpStatusCode.BadGateway
-                        )
-                    } catch (e: Exception) {
-                        DebugLog.d(TAG, "/m3u8 upstream error: ${e.message}")
-                        // 返回空 M3U8 或错误响应，让 VLCJ 知道资源不可用
-                        call.respondText(
-                            "#EXTM3U\n#EXT-X-ERROR:${e.message}",
-                            contentType = ContentType("application", "vnd.apple.mpegurl"),
-                            status = HttpStatusCode.BadGateway
-                        )
-                    }
-                }
-
-                // ─── TS 切片路由（流式响应，核心修复） ───
-                get("/ts") {
-                    val originalUrl = call.request.queryParameters["url"]
-                        ?: return@get call.respondText(
-                            "Missing 'url' parameter",
-                            status = HttpStatusCode.BadRequest
-                        )
-                    DebugLog.d(TAG, "/ts request received, originalUrl=$originalUrl")
-                    val extraHeaders = call.request.queryParameters.entries()
-                        .filter { it.key != "url" }
-                        .associate { it.key to it.value.joinToString(",") }
-                        .ifEmpty { null }
-
-                    // ── 缓存命中：流式读取 ──
-                    val cachedSource = diskCache.getSource(originalUrl)
-                    if (cachedSource != null) {
-                        DebugLog.d(TAG, "/ts cache HIT for $originalUrl")
-                        statsCollector.recordHit(0L)
-                        call.respondBytesWriter(ContentType.parse("video/MP2T")) {
-                            cachedSource.buffer().use { src ->
-                                val buf = ByteArray(65_536)
-                                while (true) {
-                                    val n = src.read(buf).toInt()
-                                    if (n == -1) break
-                                    writeFully(buf, 0, n)
-                                }
-                            }
-                        }
-                        DebugLog.d(TAG, "/ts cache HIT response completed")
-                        return@get
-                    }
-
-                    // ── 缓存未命中：边下边发，响应结束后异步写缓存 ──
-                    DebugLog.d(TAG, "/ts cache MISS for $originalUrl, fetching upstream...")
-                    statsCollector.recordMiss(0L)
-                    val collectedChunks = mutableListOf<ByteArray>()
-
-                    try {
-                        val upstreamResponse = httpClient.get(originalUrl) {
-                            extraHeaders?.forEach { (k, v) -> header(k, v) }
-                        }
-                        DebugLog.d(TAG, "/ts upstream response status=${upstreamResponse.status}")
-                        val upstreamChannel = upstreamResponse.bodyAsChannel()
-                        val contentTypeStr = upstreamResponse.contentType()?.toString() ?: "video/MP2T"
-
-                        call.respondBytesWriter(ContentType.parse(contentTypeStr)) {
-                            val buf = ByteArray(65_536)
-                            var totalBytes = 0L
-                            while (!upstreamChannel.isClosedForRead) {
-                                val n = upstreamChannel.readAvailable(buf, 0, buf.size)
-                                if (n > 0) {
-                                    writeFully(buf, 0, n)
-                                    collectedChunks.add(buf.copyOf(n))
-                                    totalBytes += n
-                                }
-                            }
-                            DebugLog.d(TAG, "/ts streaming completed, totalBytes=$totalBytes")
-                        }
-
-                        // 响应结束后异步写入磁盘缓存（不阻塞 VLCJ）
-                        if (collectedChunks.isNotEmpty()) {
-                            GlobalScope.launch(Dispatchers.IO) {
-                                try {
-                                    diskCache.putStream(originalUrl) { sink: Sink ->
-                                        val buffer = Buffer()
-                                        collectedChunks.forEach { chunk ->
-                                            buffer.write(chunk)
-                                        }
-                                        sink.write(buffer, buffer.size)
-                                    }
-                                    statsCollector.recordCachedSegment()
-                                    DebugLog.d(TAG, "/ts cache write completed for $originalUrl")
-                                } catch (e: Exception) {
-                                    DebugLog.d(TAG, "/ts cache write failed: ${e.message}")
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        DebugLog.d(TAG, "/ts upstream error: ${e.message}")
-                        if (!call.response.isSent) {
-                            call.respondText(
-                                "Upstream error: ${e.message}",
-                                status = HttpStatusCode.BadGateway
-                            )
-                        }
-                    }
-                }
+                m3u8Route(m3u8Handler)
+                tsRoute(diskCache, httpClient, statsCollector)
             }
         }.start(wait = false)
 
-        // 固定端口，直接赋值，无需等待异步绑定
         _port = PROXY_PORT
         server = engine
         statsCollector.setRunning(_port)
         DebugLog.d(TAG, "start() completed, port=$_port")
         return _port
+    }
+
+    // ========================================================================
+    // 路由定义（抽离为扩展函数，保持 start() 简洁）
+    // ========================================================================
+
+    private fun Routing.m3u8Route(handler: Lazy<M3u8RequestHandler>) {
+        get("/m3u8") {
+            val originalUrl = call.request.queryParameters["url"]
+                ?: return@get call.respondText("Missing 'url' parameter", status = HttpStatusCode.BadRequest)
+            DebugLog.d(TAG, "/m3u8 request received, originalUrl=$originalUrl")
+            val headers = parseHeaders(call)
+
+            try {
+                val content = handler.value.handle(originalUrl, headers, PROXY_PORT)
+                DebugLog.d(TAG, "/m3u8 response prepared, length=${content.length}")
+                call.respondText(content, contentType = ContentType("application", "vnd.apple.mpegurl"))
+            } catch (e: Exception) {
+                DebugLog.d(TAG, "/m3u8 error: ${e.message}")
+                call.respondText("#EXTM3U\n#EXT-X-ENDLIST", contentType = ContentType("application", "vnd.apple.mpegurl"), status = HttpStatusCode.BadGateway)
+            }
+        }
+    }
+
+    private fun Routing.tsRoute(diskCache: DiskLruCache, httpClient: HttpClient, statsCollector: CacheStatsCollector) {
+        get("/ts") {
+            val originalUrl = call.request.queryParameters["url"]
+                ?: return@get call.respondText("Missing 'url' parameter", status = HttpStatusCode.BadRequest)
+            DebugLog.d(TAG, "/ts request received, originalUrl=$originalUrl")
+            val extraHeaders = parseHeaders(call)
+
+            // ── 缓存命中：流式读取 ──
+            val cachedSource = diskCache.getSource(originalUrl)
+            if (cachedSource != null) {
+                DebugLog.d(TAG, "/ts cache HIT for $originalUrl")
+                statsCollector.recordHit(0L)
+                call.respondBytesWriter(ContentType.parse("video/MP2T")) {
+                    cachedSource.buffer().use { src ->
+                        val buf = ByteArray(65_536)
+                        while (true) {
+                            val n = src.read(buf).toInt()
+                            if (n == -1) break
+                            writeFully(buf, 0, n)
+                        }
+                    }
+                }
+                DebugLog.d(TAG, "/ts cache HIT response completed")
+                return@get
+            }
+
+            // ── 缓存未命中：边下边发，响应结束后异步写缓存 ──
+            DebugLog.d(TAG, "/ts cache MISS for $originalUrl, fetching upstream...")
+            statsCollector.recordMiss(0L)
+            val collectedChunks = mutableListOf<ByteArray>()
+
+            try {
+                val upstreamResponse = httpClient.get(originalUrl) {
+                    extraHeaders?.forEach { (k, v) -> header(k, v) }
+                }
+                DebugLog.d(TAG, "/ts upstream response status=${upstreamResponse.status}")
+                val upstreamChannel = upstreamResponse.bodyAsChannel()
+                val contentTypeStr = upstreamResponse.contentType()?.toString() ?: "video/MP2T"
+
+                call.respondBytesWriter(ContentType.parse(contentTypeStr)) {
+                    val buf = ByteArray(65_536)
+                    var totalBytes = 0L
+                    while (!upstreamChannel.isClosedForRead) {
+                        val n = upstreamChannel.readAvailable(buf, 0, buf.size)
+                        if (n > 0) {
+                            writeFully(buf, 0, n)
+                            collectedChunks.add(buf.copyOf(n))
+                            totalBytes += n
+                        }
+                    }
+                    DebugLog.d(TAG, "/ts streaming completed, totalBytes=$totalBytes")
+                }
+
+                // 响应结束后异步写入磁盘缓存（不阻塞 VLCJ）
+                if (collectedChunks.isNotEmpty()) {
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            diskCache.putStream(originalUrl) { sink: Sink ->
+                                val buffer = Buffer()
+                                collectedChunks.forEach { chunk -> buffer.write(chunk) }
+                                sink.write(buffer, buffer.size)
+                            }
+                            statsCollector.recordCachedSegment()
+                            DebugLog.d(TAG, "/ts cache write completed for $originalUrl")
+                        } catch (e: Exception) {
+                            DebugLog.d(TAG, "/ts cache write failed: ${e.message}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                DebugLog.d(TAG, "/ts upstream error: ${e.message}")
+                if (!call.response.isSent) {
+                    call.respondText("Upstream error: ${e.message}", status = HttpStatusCode.BadGateway)
+                }
+            }
+        }
+    }
+
+    /**
+     * 从请求中提取自定义请求头（排除 "url" 参数）。
+     * 消除 M3U8 和 TS 路由中的重复解析逻辑。
+     */
+    private fun parseHeaders(call: io.ktor.server.application.ApplicationCall): Map<String, String>? {
+        return call.request.queryParameters.entries()
+            .filter { it.key != "url" }
+            .associate { it.key to it.value.joinToString(",") }
+            .ifEmpty { null }
     }
 
     override fun getProxiedM3u8Url(originalUrl: String, headers: Map<String, String>?): String {
@@ -484,147 +471,7 @@ class InvalidM3u8Exception(
     val httpStatusCode: Int? = null,
 ) : Exception(message)
 
-// ========================================================================
-// TsRequestHandler — TS 切片请求处理器（流式版本）
-// ========================================================================
 
-/**
- * TS 切片请求处理器。
- *
- * ## Bug 2 修复：全量读内存 → 流式处理
- *
- * 旧版本：先把整个 TS 切片（2~8MB）下载完再返回，VLCJ 3 秒超时直接报错。
- * 新版本：使用回调模式，边从 CDN 读边回调给调用方，首字节延迟降为毫秒级。
- *
- * 核心逻辑：
- * 1. 检查缓存 → 命中直接流式读取
- * 2. 未命中 → 从 CDN 流式下载 → 同时收集数据 → 响应结束后异步写缓存
- *
- * 注意：此类不再返回 [ProxyResponse]（全量 ByteArray），
- * 而是通过 [StreamCallback] 逐块回调，由调用方（平台路由处理器）负责流式转发。
- */
-class TsRequestHandler(
-    private val diskCache: DiskLruCache,
-    private val httpClient: HttpClient,
-    private val statsCollector: CacheStatsCollector? = null,
-) {
-    /**
-     * 流式回调接口，由平台路由处理器实现。
-     */
-    fun interface StreamCallback {
-        /**
-         * 当有数据块可用时回调。
-         * @param chunk 数据块
-         * @param isLast 是否为最后一个数据块
-         */
-        suspend fun onChunk(chunk: ByteArray, isLast: Boolean)
-    }
-
-    /**
-     * 处理 TS 切片请求（流式版本）。
-     *
-     * @param originalUrl 原始 CDN URL
-     * @param rangeHeader 可选的 Range 请求头
-     * @param headers 原始请求头
-     * @param callback 流式回调，每收到一个数据块就回调一次
-     */
-    suspend fun handleStreaming(
-        originalUrl: String,
-        rangeHeader: String?,
-        headers: Map<String, String>? = null,
-        callback: StreamCallback,
-    ) {
-        // 1. 检查缓存
-        val cachedSource = diskCache.getSource(originalUrl)
-        if (cachedSource != null) {
-            serveFromCacheStreaming(cachedSource, callback)
-            return
-        }
-
-        // 2. 从 CDN 下载并缓存
-        downloadAndCacheStreaming(originalUrl, rangeHeader, headers, callback)
-    }
-
-    /**
-     * 从缓存流式读取。
-     */
-    private suspend fun serveFromCacheStreaming(
-        source: okio.Source,
-        callback: StreamCallback,
-    ) {
-        var totalBytes = 0L
-        source.buffer().use { bufferedSource ->
-            val buf = ByteArray(65_536)
-            while (true) {
-                val n = bufferedSource.read(buf).toInt()
-                if (n == -1) break
-                callback.onChunk(buf.copyOf(n), isLast = false)
-                totalBytes += n
-            }
-        }
-        callback.onChunk(ByteArray(0), isLast = true)
-        statsCollector?.recordHit(totalBytes)
-    }
-
-    /**
-     * 从 CDN 流式下载，同时收集数据用于异步写缓存。
-     */
-    private suspend fun downloadAndCacheStreaming(
-        url: String,
-        rangeHeader: String?,
-        headers: Map<String, String>? = null,
-        callback: StreamCallback,
-    ) {
-        val response = httpClient.get(url) {
-            rangeHeader?.let { header(HttpHeaders.Range, it) }
-            headers?.forEach { (k, v) -> header(k, v) }
-        }
-
-        val channel = response.bodyAsChannel()
-        val collectedChunks = mutableListOf<ByteArray>()
-        var totalBytes = 0L
-
-        try {
-            val buf = ByteArray(65_536)
-            while (!channel.isClosedForRead) {
-                val n = channel.readAvailable(buf, 0, buf.size)
-                if (n > 0) {
-                    val chunk = buf.copyOf(n)
-                    callback.onChunk(chunk, isLast = false)
-                    collectedChunks.add(chunk)
-                    totalBytes += n
-                }
-            }
-            callback.onChunk(ByteArray(0), isLast = true)
-
-            statsCollector?.recordMiss(totalBytes)
-
-            // 响应结束后异步写入磁盘缓存（不阻塞播放器）
-            if (collectedChunks.isNotEmpty()) {
-                scope.launch {
-                    try {
-                        diskCache.putStream(url) { sink ->
-                            val buffer = Buffer()
-                            collectedChunks.forEach { chunk -> buffer.write(chunk) }
-                            sink.write(buffer, buffer.size)
-                        }
-                        statsCollector?.recordCachedSegment()
-                    } catch (_: Exception) {
-                        // 缓存写入失败不影响播放
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            // 确保即使出错也通知回调结束
-            callback.onChunk(ByteArray(0), isLast = true)
-            throw e
-        }
-    }
-
-    companion object {
-        private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    }
-}
 
 // ========================================================================
 // URL 编码工具函数

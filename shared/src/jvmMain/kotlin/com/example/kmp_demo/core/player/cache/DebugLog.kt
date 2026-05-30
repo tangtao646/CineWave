@@ -16,7 +16,7 @@ package com.example.kmp_demo.core.player.cache
  */
 object DebugLog {
     /** 全局开关：true=打印日志，false=静默 */
-    var enabled: Boolean = true
+    var enabled: Boolean = false
 
     /**
      * 打印调试日志。
