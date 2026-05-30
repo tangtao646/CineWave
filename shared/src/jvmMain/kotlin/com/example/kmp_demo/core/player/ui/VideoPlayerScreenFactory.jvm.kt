@@ -3,6 +3,7 @@ package com.example.kmp_demo.core.player.ui
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.*
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
+import com.example.kmp_demo.core.player.cache.DebugLog
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.CacheOrchestrator
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
@@ -62,12 +63,14 @@ actual fun PlatformVideoPlayerScreen(
     val proxyServer: CacheProxyServer = koinInject()
     val segmentCacheTracker: SegmentCacheTracker = koinInject()
     val shareUrlResolver: ShareUrlResolver = koinInject()
+    val httpClient: HttpClient = koinInject()
 
     // ========== 创建 CacheOrchestrator ==========
-    val cacheOrchestrator = remember(proxyServer, segmentCacheTracker) {
+    val cacheOrchestrator = remember(proxyServer, segmentCacheTracker, httpClient) {
         CacheOrchestrator(
             proxyServer = proxyServer,
             segmentCacheTracker = segmentCacheTracker,
+            httpClient = httpClient,
         )
     }
 
@@ -84,9 +87,17 @@ actual fun PlatformVideoPlayerScreen(
         onManagerCreated?.invoke(manager)
     }
 
+    // ========== 防重入：防止同一 URL 被重复打开 ==========
+    var lastOpenedUrl by remember { mutableStateOf<String?>(null) }
+
     // ========== 副作用集中在此：解析 URL + 打开视频 ==========
     LaunchedEffect(url, headers) {
         val resolvedUrl = shareUrlResolver.resolve(url, headers)
+        // 防重入：如果解析后的 URL 与上次相同，跳过
+        if (resolvedUrl == lastOpenedUrl) return@LaunchedEffect
+        lastOpenedUrl = resolvedUrl
+
+        DebugLog.d("[PlatformVideoPlayerScreen]"," resolvedUrl = $resolvedUrl")
         manager.open(resolvedUrl, headers)
     }
 

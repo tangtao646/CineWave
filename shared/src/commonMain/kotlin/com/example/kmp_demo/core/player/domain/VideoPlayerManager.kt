@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
  * - 控制栏自动隐藏委托给 [ControlsAutoHideService]
  * - 缓存逻辑委托给 [CacheOrchestrator]
  * - 移除 runBlocking
+ * - 提取 [launchSafe] 消除 play/pause/seek 等方法的 try-catch 模板代码
  *
  * ## 缓存架构（纯代理模式）
  *
@@ -89,6 +90,22 @@ class VideoPlayerManager(
         initialValue = VideoPlayerUiState()
     )
 
+    // ========== 辅助函数：消除 try-catch 模板代码 ==========
+
+    /**
+     * 在 [scope] 中安全启动协程，捕获所有异常。
+     * 消除 play/pause/seekTo 等方法中重复的 scope.launch { try { ... } catch { } } 模板。
+     */
+    private fun launchSafe(block: suspend IVideoPlayerController.() -> Unit) {
+        scope.launch {
+            try {
+                controller.block()
+            } catch (_: Exception) {
+                // 异常由 controller 的 StateFlow 传播，无需额外处理
+            }
+        }
+    }
+
     // ========== 播放控制 ==========
 
     /**
@@ -108,78 +125,32 @@ class VideoPlayerManager(
             controller.open(finalUrl, headers)
             controlsAutoHideService.show()
         } catch (e: Exception) {
-            // 错误已通过 playbackState 传播
+            // cacheOrchestrator.start() 或 controller.open() 失败
+            // 错误通过 controller.playbackState → ERROR 传播到 UI
+            println("[VideoPlayerManager] open() failed: ${e.message}")
         }
     }
 
-    fun play() {
-        scope.launch {
-            try {
-                controller.play()
-            } catch (_: Exception) { }
-        }
-    }
+    fun play() = launchSafe { play() }
 
-    fun pause() {
-        scope.launch {
-            try {
-                controller.pause()
-            } catch (_: Exception) { }
-        }
-    }
+    fun pause() = launchSafe { pause() }
 
-    fun togglePlayPause() {
-        scope.launch {
-            try {
-                controller.togglePlayPause()
-            } catch (_: Exception) { }
-        }
-    }
+    fun togglePlayPause() = launchSafe { togglePlayPause() }
 
     fun seekToFraction(fraction: Float) {
         val targetMs = (fraction * uiState.value.duration).toLong()
         seekTo(targetMs)
     }
 
-    fun seekTo(positionMs: Long) {
-        scope.launch {
-            try {
-                controller.seekTo(positionMs)
-            } catch (_: Exception) { }
-        }
-    }
+    fun seekTo(positionMs: Long) = launchSafe { seekTo(positionMs) }
 
-    fun seekForward(seconds: Long = 10) {
-        scope.launch {
-            try {
-                controller.seekForward(seconds)
-            } catch (_: Exception) { }
-        }
-    }
+    fun seekForward(seconds: Long = 10) = launchSafe { seekForward(seconds) }
 
-    fun seekBackward(seconds: Long = 10) {
-        scope.launch {
-            try {
-                controller.seekBackward(seconds)
-            } catch (_: Exception) { }
-        }
-    }
+    fun seekBackward(seconds: Long = 10) = launchSafe { seekBackward(seconds) }
 
-    fun setVolume(volume: Float) {
-        scope.launch {
-            try {
-                controller.setVolume(volume)
-            } catch (_: Exception) { }
-        }
-    }
+    fun setVolume(volume: Float) = launchSafe { setVolume(volume) }
 
-    fun toggleFullScreen() {
-        scope.launch {
-            try {
-                controller.toggleFullScreen()
-            } catch (_: Exception) { }
-        }
-    }
+    fun toggleFullScreen() = launchSafe { toggleFullScreen() }
 
     // ========== 控制栏显隐（委托给 ControlsAutoHideService）==========
 

@@ -5,10 +5,12 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.util.*
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * 分享链接解析器 - 增强版。
- * 支持递归解析、Base64 解码、URL 解码以及针对资源站（如非凡资源）的深度嗅探。
+ * 分享链接解析器 - 增强修复版
  */
 class ShareUrlResolver(
     private val httpClient: HttpClient,
@@ -16,42 +18,30 @@ class ShareUrlResolver(
     companion object {
         private const val MAX_RECURSION_DEPTH = 3
 
-        // 直接的视频文件扩展名
         private val DIRECT_VIDEO_EXTENSIONS = setOf(
             ".m3u8", ".mp4", ".flv", ".ts", ".webm",
             ".mkv", ".avi", ".mov", ".wmv", ".3gp"
         )
 
-        // 已知的分享链接路径模式
         private val SHARE_PATH_PATTERNS = listOf(
             Regex("""/(?:share|play|player|vod|video|v)/(?:[\w-]+)"""),
             Regex("""/(?:index\.php)?\?.*[&?](?:vid|id|url)=.*"""),
         )
 
-        // HTML 中提取视频 URL 的增强正则模式
         private val VIDEO_URL_PATTERNS = listOf(
-            // 常见的 JS 变量赋值 (如 var main = "...", var url = "...")
             Regex("""(?:var|let|const)\s+(?:main|url|vurl|play_url|m3u8_url)\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
-            // 常见的 video.js / plyr / dplayer 等播放器的 data-source 或 data-config
             Regex("""data[-.]?(?:src|source|url|config)\s*=\s*["']([^"']+\.(?:m3u8|mp4|flv)[^"']*)["']""", RegexOption.IGNORE_CASE),
-            // 直接的 video/source 标签
             Regex("""<(?:video|source)[^>]*\s+src\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
-            // JavaScript 对象中的视频 URL
             Regex("""["'](?:url|src|link|video|videoUrl|playUrl)["']\s*[:=]\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
-            // 通用的 m3u8 字符串匹配（最后兜底）
             Regex("""["']([^"']+\.m3u8[^"']*)["']""", RegexOption.IGNORE_CASE),
         )
 
-        // 已知的 JSON API 响应中视频 URL 的字段名
         private val JSON_URL_FIELDS = listOf(
             "url", "src", "link", "video", "videoUrl", "videoSrc",
             "playUrl", "playSrc", "m3u8", "hls", "stream", "source", "data"
         )
     }
 
-    /**
-     * 检测 URL 是否为直接的视频流 URL。
-     */
     fun isDirectVideoUrl(url: String): Boolean {
         val lowerUrl = url.lowercase()
         if (DIRECT_VIDEO_EXTENSIONS.any { lowerUrl.contains(it) }) return true
@@ -59,41 +49,30 @@ class ShareUrlResolver(
         return false
     }
 
-    /**
-     * 检测 URL 是否为分享链接（需要解析）。
-     */
     fun isShareUrl(url: String): Boolean {
         if (isDirectVideoUrl(url)) return false
         val lowerUrl = url.lowercase()
-        return SHARE_PATH_PATTERNS.any { it.containsMatchIn(lowerUrl) } || 
-               lowerUrl.contains("/share/") || lowerUrl.contains("/play/")
+        return SHARE_PATH_PATTERNS.any { it.containsMatchIn(lowerUrl) } ||
+                lowerUrl.contains("/share/") || lowerUrl.contains("/play/")
     }
 
-    /**
-     * 解析分享链接，提取实际的视频流 URL。
-     * 
-     * @param url 分享链接
-     * @param headers 可选的自定义请求头
-     * @param depth 当前递归深度
-     */
     suspend fun resolve(
-        url: String, 
-        headers: Map<String, String>? = null, 
+        url: String,
+        headers: Map<String, String>? = null,
         depth: Int = 0
     ): String {
+        // 每次递归前检查当前协程是否还活着，及时收手
+        currentCoroutineContext().ensureActive()
+
         if (depth > MAX_RECURSION_DEPTH) return url
         if (isDirectVideoUrl(url)) return url
 
         return try {
             val response: HttpResponse = httpClient.get(url) {
-                // 伪装成现代 Chrome 浏览器
                 header(HttpHeaders.UserAgent, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
                 header(HttpHeaders.Accept, "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
                 header(HttpHeaders.AcceptLanguage, "zh-CN,zh;q=0.9,en;q=0.8")
-                
-                // 必须传完整的 Referer，而不仅仅是域名
                 header(HttpHeaders.Referrer, url)
-                
                 headers?.forEach { (k, v) -> header(k, v) }
             }
 
@@ -106,26 +85,31 @@ class ShareUrlResolver(
             val body = response.bodyAsText()
 
             when {
-                // 处理 JSON 响应
-                contentType?.match(ContentType.Application.Json) == true || 
-                (body.trimStart().startsWith("{") && body.trimEnd().endsWith("}")) -> {
+                contentType?.match(ContentType.Application.Json) == true ||
+                        (body.trimStart().startsWith("{") && body.trimEnd().endsWith("}")) -> {
                     val jsonUrl = resolveFromJson(body)
-                    if (jsonUrl != body) resolve(jsonUrl, headers, depth + 1) else url
+                    // 修复：清洗可能夹带的多余特殊字符（如日志里的 $$$ 干扰）
+                    val cleanJsonUrl = sanitizeUrl(jsonUrl)
+                    if (cleanJsonUrl != body && cleanJsonUrl.isNotBlank()) {
+                        resolve(cleanJsonUrl, headers, depth + 1)
+                    } else url
                 }
-                
-                // 处理 HTML 响应
+
                 contentType?.match(ContentType.Text.Html) == true || body.contains("<html") -> {
                     val htmlUrl = resolveFromHtml(body, url)
-                    if (htmlUrl != url) {
-                        // 发现新链接，递归解析（可能是 iframe 或者是动态跳转）
-                        resolve(htmlUrl, headers, depth + 1)
+                    val cleanHtmlUrl = sanitizeUrl(htmlUrl)
+                    if (cleanHtmlUrl != url && cleanHtmlUrl.isNotBlank()) {
+                        resolve(cleanHtmlUrl, headers, depth + 1)
                     } else {
                         url
                     }
                 }
-                
+
                 else -> url
             }
+        } catch (e: CancellationException) {
+            // 关键：必须重新抛出取消异常，通知上层“我是因为界面销毁才退出的”
+            throw e
         } catch (e: Exception) {
             println("[ShareUrlResolver] Resolution failed for $url: ${e.message}")
             url
@@ -133,21 +117,17 @@ class ShareUrlResolver(
     }
 
     private fun resolveFromHtml(html: String, pageUrl: String): String {
-        // 1. 尝试从增强的正则模式中匹配
         for (pattern in VIDEO_URL_PATTERNS) {
             val match = pattern.find(html)
             if (match != null) {
                 val rawUrl = match.groupValues[1].trim()
                 val decodedUrl = smartDecode(rawUrl)
                 if (decodedUrl.isNotBlank()) {
-                    val absoluteUrl = resolveRelativeUrl(decodedUrl, pageUrl)
-                    // 如果已经是视频地址，直接返回；否则可能是一个嵌套页面
-                    return absoluteUrl
+                    return resolveRelativeUrl(decodedUrl, pageUrl)
                 }
             }
         }
 
-        // 2. 专门处理嵌套 iframe
         val iframePattern = Regex("""<iframe[^>]*\s+src\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         val iframeMatch = iframePattern.find(html)
         if (iframeMatch != null) {
@@ -172,21 +152,14 @@ class ShareUrlResolver(
         return json
     }
 
-    /**
-     * 智能解码：尝试 URL 解码和 Base64 解码。
-     */
     private fun smartDecode(input: String): String {
         var result = input
-        
-        // 1. 尝试 URL 解码 (针对 %3A%2F%2F 等)
         if (result.contains("%")) {
             try {
                 result = result.decodeURLQueryComponent()
             } catch (_: Exception) {}
         }
 
-        // 2. 尝试 Base64 解码 (针对加密地址)
-        // 典型的 Base64 视频地址长度较长且没有明显的特殊字符
         if (!result.contains("/") && !result.contains(":") && result.length > 20) {
             try {
                 val decoded = result.decodeBase64String()
@@ -195,7 +168,6 @@ class ShareUrlResolver(
                 }
             } catch (_: Exception) {}
         }
-
         return result
     }
 
@@ -221,5 +193,70 @@ class ShareUrlResolver(
     private fun extractDomain(url: String): String? {
         val pattern = Regex("""(https?://[^/]+)""")
         return pattern.find(url)?.groupValues?.get(1)
+    }
+
+    /**
+     * 清洗从不规范的 HTML/JSON 变量中误抓取的非 URL 脏字符。
+     *
+     * 处理场景：
+     * 1. `$$$` 投毒：如 `share/xxx$$$第01集$https://real.m3u8` → 提取 `https://real.m3u8`
+     * 2. `$` 分隔符残留：如 `第01集$https://real.m3u8` → 提取 `https://real.m3u8`
+     * 3. 剧集名前缀：如 `第01集https://real.m3u8` → 提取 `https://real.m3u8`
+     * 4. 多重 URL 拼接：取最后一个有效的 http(s) URL
+     * 5. 非 URL 字符前后缀：trim 掉空白和不可见字符
+     */
+    private fun sanitizeUrl(url: String): String {
+        var result = url.trim()
+
+        // 如果已经是纯净的 URL，直接返回
+        if (isDirectVideoUrl(result)) return result
+
+        // 策略1：从字符串中提取所有 http(s) URL，取最后一个（最可能是真正的视频地址）
+        val httpUrlPattern = Regex("""https?://[^\s"'<>，。、；：（）()【】\[\]{}#]+""")
+        val allMatches = httpUrlPattern.findAll(result).toList()
+        if (allMatches.isNotEmpty()) {
+            // 取最后一个 http URL，因为前面的可能是被污染的分享页 URL
+            val candidate = allMatches.last().value.trimEnd('.', ',', ';', ':', ')', '】', '】')
+            if (isDirectVideoUrl(candidate) || candidate.contains(".m3u8") || candidate.contains(".mp4") || candidate.contains(".flv")) {
+                return candidate
+            }
+            // 如果不是直接视频 URL，但至少是一个合法的 http URL，也返回它
+            return candidate
+        }
+
+        // 策略2：如果包含 $$$，尝试提取 $$$ 之后的内容
+        if (result.contains("$$$")) {
+            val afterDollar = result.substringAfterLast("$$$")
+            // 检查 $$$ 之后是否包含 http URL
+            val urlInAfter = httpUrlPattern.find(afterDollar)
+            if (urlInAfter != null) {
+                return urlInAfter.value
+            }
+            // 否则返回 $$$ 之后的内容（可能已经是纯净 URL）
+            if (afterDollar.isNotBlank()) return afterDollar.trim()
+        }
+
+        // 策略3：如果包含 $ 分隔符（如 "第01集$https://..."），取 $ 之后的部分
+        if (result.contains("$") && !result.startsWith("http")) {
+            val parts = result.split("$")
+            // 从后往前找第一个包含 http 的部分
+            for (i in parts.lastIndex downTo 0) {
+                val part = parts[i].trim()
+                if (part.startsWith("http://") || part.startsWith("https://")) {
+                    return part
+                }
+            }
+        }
+
+        // 策略4：去除常见的剧集名前缀（如 "第01集"、"第1集"、"第01话" 等）
+        val episodePrefixPattern = Regex("""^第\d+[集话期季]""")
+        result = result.replace(episodePrefixPattern, "").trim()
+
+        // 如果去除前缀后变成了有效的 http URL，返回它
+        if (result.startsWith("http://") || result.startsWith("https://")) {
+            return result
+        }
+
+        return url.trim()
     }
 }

@@ -25,6 +25,7 @@ import com.example.kmp_demo.core.player.domain.ShareUrlResolver
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 import com.example.kmp_demo.core.player.platform.ExoPlayerController
+import io.ktor.client.HttpClient
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 
@@ -70,12 +71,14 @@ actual fun PlatformVideoPlayerScreen(
     val controller: IVideoPlayerController = koinInject(parameters = { parametersOf(fullscreenController) })
     val segmentCacheTracker: SegmentCacheTracker = koinInject()
     val shareUrlResolver: ShareUrlResolver = koinInject()
+    val httpClient: HttpClient = koinInject()
 
     // ========== 创建 CacheOrchestrator（Android 无代理，仅用于切片追踪） ==========
-    val cacheOrchestrator = remember(segmentCacheTracker) {
+    val cacheOrchestrator = remember(segmentCacheTracker, httpClient) {
         CacheOrchestrator(
             proxyServer = null,          // Android 使用 SimpleCache，无需代理
             segmentCacheTracker = segmentCacheTracker,
+            httpClient = httpClient,
         )
     }
 
