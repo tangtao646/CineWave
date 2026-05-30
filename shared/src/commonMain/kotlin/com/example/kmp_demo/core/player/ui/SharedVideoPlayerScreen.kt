@@ -167,6 +167,24 @@ fun SharedVideoPlayerScreen(
                     )
                 }
             }
+
+            // ========== 错误展示层 ==========
+            // 当播放状态为 ERROR 时，显示美观的错误提示覆盖层
+            // 使用 AnimatedVisibility 实现平滑淡入淡出
+            AnimatedVisibility(
+                visible = uiState.isError && uiState.playerError != null,
+                enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
+                exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(200)),
+            ) {
+                uiState.playerError?.let { playerError ->
+                    ErrorDisplay(
+                        playerError = playerError,
+                        onRetry = {
+                            handlePlayerAction(manager, PlayerAction.Retry)
+                        },
+                    )
+                }
+            }
         }
     }
 }

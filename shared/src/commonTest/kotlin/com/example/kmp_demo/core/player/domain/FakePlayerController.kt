@@ -31,6 +31,9 @@ class FakePlayerController : IVideoPlayerController {
     private val _bufferedPercent = MutableStateFlow(0)
     override val bufferedPercent: StateFlow<Int> = _bufferedPercent.asStateFlow()
 
+    private val _playerError = MutableStateFlow<PlayerError?>(null)
+    override val playerError: StateFlow<PlayerError?> = _playerError.asStateFlow()
+
     /** 模拟播放进度推进的 Job */
     private var progressJob: Job? = null
 

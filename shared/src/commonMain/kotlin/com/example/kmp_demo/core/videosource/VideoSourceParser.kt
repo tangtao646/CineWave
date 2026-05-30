@@ -26,9 +26,14 @@ object VideoSourceParser {
      */
     fun parse(response: VideoSourceApiResponse, siteName: String): List<VideoSource> {
         val items = response.list ?: return emptyList()
-        return items.flatMap { item ->
+        val sources = items.flatMap { item ->
             parsePlayUrl(item.vodPlayUrl.orEmpty(), siteName)
         }
+        return sources
+
+        //临时插入测试数据
+        //return insertTestSource(sources, siteName)
+
     }
 
 
@@ -86,7 +91,9 @@ object VideoSourceParser {
 
                 // 3. 如果没找到带后缀的，就退而求其次，拿最后一个以 http 开头的碎片（兜底方案）
                 if (realVideoUrl.isBlank()) {
-                    realVideoUrl = tokens.lastOrNull { it.trim().startsWith("http", ignoreCase = true) }?.trim() ?: ""
+                    realVideoUrl =
+                        tokens.lastOrNull { it.trim().startsWith("http", ignoreCase = true) }
+                            ?.trim() ?: ""
                 }
 
                 // 如果连一个合法的 URL 碎片都没捞到，说明这行数据彻底报废
@@ -126,4 +133,23 @@ object VideoSourceParser {
             else -> "unknown"
         }
     }
+}
+
+/**
+ * 测试剧集注入（调试用）
+ * 注释掉后不影响正常使用。
+ */
+private fun insertTestSource(
+    sources: List<VideoSource>,
+    siteName: String
+): List<VideoSource> {
+    return sources + listOf(
+        VideoSource(
+            url = "https://s1.bfllvip.com/video/majiangzhiye/%E4%B8%AD%E5%AD%97/index.m3u8",
+            quality = "测试剧集-中字",
+            format = "m3u8",
+            size = 0L,
+            sourceSite = siteName,
+        )
+    )
 }

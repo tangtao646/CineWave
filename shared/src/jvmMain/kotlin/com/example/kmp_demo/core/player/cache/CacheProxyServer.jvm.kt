@@ -45,6 +45,10 @@ import okio.Sink
  * ### 修复3：DiskLruCache 锁优化
  * 旧版本：getSource() 在 mutex.withLock 内执行文件读取，阻塞所有写入路径。
  * 新版本：Mutex 仅保护元数据，IO 操作移到锁外。
+ *
+ * ### 修复4：无效 M3U8 检测
+ * 当上游返回的 M3U8 内容无效（无 #EXTM3U 头、无切片 URL、或内容为空）时，
+ * 返回 HTTP 502 Bad Gateway，让 VLC 触发 error 事件，避免无限重试死循环。
  */
 class CacheProxyServerJvm(
     private val diskCache: DiskLruCache,
@@ -92,12 +96,30 @@ class CacheProxyServerJvm(
                         .associate { it.key to it.value.joinToString(",") }
                         .ifEmpty { null }
 
-                    val content = m3u8Handler.value.handle(originalUrl, headers, PROXY_PORT)
-                    DebugLog.d(TAG, "/m3u8 response prepared, length=${content.length}")
-                    call.respondText(
-                        content,
-                        contentType = ContentType("application", "vnd.apple.mpegurl")
-                    )
+                    try {
+                        val content = m3u8Handler.value.handle(originalUrl, headers, PROXY_PORT)
+                        DebugLog.d(TAG, "/m3u8 response prepared, length=${content.length}")
+                        call.respondText(
+                            content,
+                            contentType = ContentType("application", "vnd.apple.mpegurl")
+                        )
+                    } catch (e: InvalidM3u8Exception) {
+                        DebugLog.d(TAG, "/m3u8 invalid content: ${e.message}")
+                        // 返回 502 Bad Gateway，让 VLC 触发 error 事件
+                        call.respondText(
+                            "#EXTM3U\n#EXT-X-ERROR:${e.message}",
+                            contentType = ContentType("application", "vnd.apple.mpegurl"),
+                            status = HttpStatusCode.BadGateway
+                        )
+                    } catch (e: Exception) {
+                        DebugLog.d(TAG, "/m3u8 upstream error: ${e.message}")
+                        // 返回空 M3U8 或错误响应，让 VLCJ 知道资源不可用
+                        call.respondText(
+                            "#EXTM3U\n#EXT-X-ERROR:${e.message}",
+                            contentType = ContentType("application", "vnd.apple.mpegurl"),
+                            status = HttpStatusCode.BadGateway
+                        )
+                    }
                 }
 
                 // ─── TS 切片路由（流式响应，核心修复） ───
@@ -242,18 +264,32 @@ class M3u8RequestHandler(
      * @param headers 原始请求头
      * @param proxyPort 当前代理服务器端口（通过参数传入，避免 lazy 捕获问题）
      * @return 修改后的 M3U8 内容（切片 URL 已被替换为本地代理 URL）
+     * @throws InvalidM3u8Exception 如果 M3U8 内容无效
      */
     suspend fun handle(originalUrl: String, headers: Map<String, String>?, proxyPort: Int): String {
         // 1. 从 CDN 下载原始 M3U8
         val response = httpClient.get(originalUrl) {
             headers?.forEach { (k, v) -> header(k, v) }
         }
+
+        // 检查 HTTP 状态码
+        if (response.status.value !in 200..299) {
+            throw InvalidM3u8Exception(
+                "上游服务器返回 HTTP ${response.status.value}",
+                originalUrl,
+                response.status.value
+            )
+        }
+
         val rawContent = response.bodyAsText()
 
-        // 2. 解析并替换 URL
+        // 2. 验证 M3U8 内容有效性
+        validateM3u8Content(rawContent, originalUrl)
+
+        // 3. 解析并替换 URL
         val modifiedContent = replaceSegmentUrls(rawContent, originalUrl, headers, proxyPort)
 
-        // 3. 后台预取前 3 个切片（播放器几乎一定会请求前几个切片）
+        // 4. 后台预取前 3 个切片（播放器几乎一定会请求前几个切片）
         val segments = parseSegmentUrls(rawContent, originalUrl)
         if (segments.isNotEmpty()) {
             scope.launch {
@@ -266,6 +302,54 @@ class M3u8RequestHandler(
         }
 
         return modifiedContent
+    }
+
+    /**
+     * 验证 M3U8 内容是否有效。
+     *
+     * 有效的 M3U8 播放列表必须满足以下条件之一：
+     * 1. 包含 #EXTM3U 头部
+     * 2. 包含至少一个切片 URL（非 # 开头的行）
+     * 3. 内容不为空
+     *
+     * 如果内容无效，抛出 [InvalidM3u8Exception]。
+     */
+    private fun validateM3u8Content(content: String, originalUrl: String) {
+        // 检查内容是否为空
+        if (content.isBlank()) {
+            throw InvalidM3u8Exception(
+                "M3U8 内容为空",
+                originalUrl
+            )
+        }
+
+        // 检查是否包含 #EXTM3U 头部
+        if (!content.contains("#EXTM3U")) {
+            throw InvalidM3u8Exception(
+                "M3U8 格式无效：缺少 #EXTM3U 头部",
+                originalUrl
+            )
+        }
+
+        // 检查是否包含至少一个切片 URL 或二级 M3U8 URL
+        // 有效的 M3U8 应该包含 #EXTINF 标签（切片）或 #EXT-X-STREAM-INF 标签（二级 M3U8）
+        val hasExtInf = content.contains("#EXTINF")
+        val hasStreamInf = content.contains("#EXT-X-STREAM-INF")
+
+        if (!hasExtInf && !hasStreamInf) {
+            // 进一步检查是否有任何非注释行（可能是切片 URL）
+            val hasSegmentUrl = content.lines().any { line ->
+                val trimmed = line.trim()
+                trimmed.isNotEmpty() && !trimmed.startsWith("#")
+            }
+
+            if (!hasSegmentUrl) {
+                throw InvalidM3u8Exception(
+                    "M3U8 内容无效：没有可播放的切片或子播放列表",
+                    originalUrl
+                )
+            }
+        }
     }
 
     /**
@@ -332,11 +416,30 @@ class M3u8RequestHandler(
 
     /**
      * 解析相对 URL。
+     *
+     * 处理三种情况：
+     * 1. 完整 URL（http/https 开头）→ 直接返回
+     * 2. 以 / 开头的绝对路径 → 用协议+域名拼接（避免双斜杠）
+     * 3. 相对路径 → 用 base URL 的目录部分拼接
      */
     private fun resolveUrl(url: String, baseUrl: String): String {
         if (url.startsWith("http://") || url.startsWith("https://")) {
             return url
         }
+        // 以 / 开头的绝对路径：直接用协议+域名拼接，避免双斜杠
+        if (url.startsWith("/")) {
+            // 提取协议和域名，例如 "https://vod2.maowushi.com"
+            val protocolEnd = baseUrl.indexOf("://")
+            if (protocolEnd == -1) {
+                // 没有协议，直接拼接
+                return "$baseUrl$url"
+            }
+            val protocol = baseUrl.substring(0, protocolEnd + 3) // 包含 "://"
+            val afterProtocol = baseUrl.substring(protocolEnd + 3)
+            val domain = afterProtocol.substringBefore("/")
+            return "$protocol$domain$url"
+        }
+        // 相对路径：用 base URL 的目录部分拼接
         val base = baseUrl.substringBeforeLast("/")
         return "$base/$url"
     }
@@ -368,6 +471,18 @@ class M3u8RequestHandler(
         }
     }
 }
+
+/**
+ * M3U8 内容无效异常。
+ *
+ * 当上游返回的 M3U8 内容不满足有效播放列表格式时抛出此异常。
+ * 例如：内容为空、缺少 #EXTM3U 头部、没有切片 URL 等。
+ */
+class InvalidM3u8Exception(
+    message: String,
+    val originalUrl: String,
+    val httpStatusCode: Int? = null,
+) : Exception(message)
 
 // ========================================================================
 // TsRequestHandler — TS 切片请求处理器（流式版本）
@@ -517,17 +632,14 @@ class TsRequestHandler(
 
 /**
  * URL 编码工具函数。
+ *
+ * 使用 UTF-8 编码对 URL 中的非 ASCII 字符和特殊字符进行百分比编码。
+ * 例如：中文字符 "中字" 会被编码为 "%E4%B8%AD%E5%AD%97"。
+ *
+ * 注意：使用 Java 的 URLEncoder 可以正确处理 UTF-8 编码，
+ * 但需要额外处理空格（应编码为 %20 而非 +）。
  */
 internal fun String.encodeURL(): String {
-    return buildString {
-        this@encodeURL.forEach { c ->
-            when (c) {
-                in 'a'..'z', in 'A'..'Z', in '0'..'9', '-', '_', '.', '~' -> append(c)
-                else -> {
-                    append('%')
-                    append(c.code.toString(16).uppercase().padStart(2, '0'))
-                }
-            }
-        }
-    }
+    return java.net.URLEncoder.encode(this, "UTF-8")
+        .replace("+", "%20")
 }

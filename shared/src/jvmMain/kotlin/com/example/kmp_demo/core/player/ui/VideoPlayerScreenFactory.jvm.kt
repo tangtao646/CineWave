@@ -90,11 +90,14 @@ actual fun PlatformVideoPlayerScreen(
     // ========== 防重入：防止同一 URL 被重复打开 ==========
     var lastOpenedUrl by remember { mutableStateOf<String?>(null) }
 
+    // ========== 重试触发器：观察 retryTrigger 变化 ==========
+    val retryTrigger by manager.retryTrigger.collectAsState()
+
     // ========== 副作用集中在此：解析 URL + 打开视频 ==========
-    LaunchedEffect(url, headers) {
+    LaunchedEffect(url, headers, retryTrigger) {
         val resolvedUrl = shareUrlResolver.resolve(url, headers)
-        // 防重入：如果解析后的 URL 与上次相同，跳过
-        if (resolvedUrl == lastOpenedUrl) return@LaunchedEffect
+        // 防重入：如果解析后的 URL 与上次相同，跳过（但重试时允许重新打开）
+        if (resolvedUrl == lastOpenedUrl && retryTrigger == 0) return@LaunchedEffect
         lastOpenedUrl = resolvedUrl
 
         DebugLog.d("[PlatformVideoPlayerScreen]"," resolvedUrl = $resolvedUrl")
