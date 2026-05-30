@@ -42,6 +42,14 @@ interface IVideoPlayerController {
     /** 缓冲百分比 0~100 */
     val bufferedPercent: StateFlow<Int>
 
+    /**
+     * 详细的错误信息。
+     *
+     * 当 [playbackState] 为 ERROR 时，此字段包含具体的错误类型和详情。
+     * 平台控制器应在检测到错误时设置此值，以便 UI 层展示有意义的错误提示。
+     */
+    val playerError: StateFlow<PlayerError?>
+
     /** 打开视频源 */
     suspend fun open(url: String, headers: Map<String, String>? = null)
 

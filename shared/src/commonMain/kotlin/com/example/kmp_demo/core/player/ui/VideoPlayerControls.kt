@@ -475,6 +475,8 @@ sealed interface PlayerAction {
     data object ToggleMute : PlayerAction
     /** 清除磁盘缓存 */
     data object ClearCache : PlayerAction
+    /** 重试播放（错误恢复） */
+    data object Retry : PlayerAction
 }
 
 /**
@@ -513,5 +515,6 @@ internal fun handlePlayerAction(
             }
         }
         PlayerAction.ClearCache -> { /* 平台自行决定缓存清理策略 */ }
+        PlayerAction.Retry -> manager.retry()
     }
 }

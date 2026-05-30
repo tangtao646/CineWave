@@ -48,6 +48,18 @@ class VideoPlayerManager(
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
+    /**
+     * 重试触发器。
+     *
+     * 每次调用 [retry] 时递增，平台层通过观察此值的变化来重新触发 [open]。
+     * 这是实现"错误重试"的关键机制：
+     * 1. UI 层点击"重试"按钮 → 调用 [retry] → 递增计数器
+     * 2. 平台层的 LaunchedEffect 观察此计数器变化 → 重新调用 [open]
+     * 3. 播放器重新加载 URL
+     */
+    private val _retryTrigger = MutableStateFlow(0)
+    val retryTrigger: StateFlow<Int> = _retryTrigger.asStateFlow()
+
     // ========== 状态聚合 ==========
 
     /** 单一事实来源：聚合后的 UI 状态 */
@@ -67,8 +79,13 @@ class VideoPlayerManager(
         ) { volume, isFullScreen, controlsVisible ->
             Triple(volume, isFullScreen, controlsVisible)
         },
-        cacheOrchestrator?.cachedSegments ?: MutableStateFlow(emptyList())
-    ) { core, ui, cachedSegments ->
+        combine(
+            controller.playerError,
+            cacheOrchestrator?.cachedSegments ?: MutableStateFlow(emptyList())
+        ) { error, segments ->
+            error to segments
+        }
+    ) { core, ui, (playerError, cachedSegments) ->
         val (playback, pos, dur) = core.first
         val buffered = core.second
         val (vol, full, visible) = ui
@@ -81,7 +98,7 @@ class VideoPlayerManager(
             volume = vol,
             isFullScreen = full,
             isControlsVisible = visible,
-            error = if (playback == VideoPlaybackState.ERROR) "播放出错" else null,
+            playerError = playerError,
             cachedSegments = cachedSegments,
         )
     }.stateIn(
@@ -151,6 +168,16 @@ class VideoPlayerManager(
     fun setVolume(volume: Float) = launchSafe { setVolume(volume) }
 
     fun toggleFullScreen() = launchSafe { toggleFullScreen() }
+
+    /**
+     * 重试播放。
+     *
+     * 递增 [retryTrigger] 计数器，平台层通过观察此值变化来重新调用 [open]。
+     * 同时重置播放器错误状态。
+     */
+    fun retry() {
+        _retryTrigger.value++
+    }
 
     // ========== 控制栏显隐（委托给 ControlsAutoHideService）==========
 

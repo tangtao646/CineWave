@@ -13,6 +13,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -95,8 +97,11 @@ actual fun PlatformVideoPlayerScreen(
         onManagerCreated?.invoke(manager)
     }
 
+    // ========== 重试触发器：观察 retryTrigger 变化 ==========
+    val retryTrigger by manager.retryTrigger.collectAsState()
+
     // ========== 副作用集中在此：解析 URL + 打开视频 ==========
-    LaunchedEffect(url, headers) {
+    LaunchedEffect(url, headers, retryTrigger) {
         val resolvedUrl = shareUrlResolver.resolve(url, headers)
         manager.open(resolvedUrl, headers)
     }

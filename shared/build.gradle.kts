@@ -108,6 +108,12 @@ kotlin {
             implementation(libs.ktor.server.cio)
 
         }
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+        }
+        jvmTest.dependencies {
+            implementation(libs.kotlin.test)
+        }
         jvmMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.ktor.client.okhttp)

@@ -18,6 +18,8 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import com.example.kmp_demo.core.player.cache.ExoPlayerCache
 import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
+import com.example.kmp_demo.core.player.domain.PlayerError
+import com.example.kmp_demo.core.player.domain.PlayerErrorType
 import com.example.kmp_demo.core.player.domain.VideoPlaybackState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -112,6 +114,9 @@ class ExoPlayerController(
     private val _bufferedPercent = MutableStateFlow(0)
     override val bufferedPercent: StateFlow<Int> = _bufferedPercent.asStateFlow()
 
+    private val _playerError = MutableStateFlow<PlayerError?>(null)
+    override val playerError: StateFlow<PlayerError?> = _playerError.asStateFlow()
+
     init {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
@@ -160,6 +165,7 @@ class ExoPlayerController(
             override fun onPlayerError(error: PlaybackException) {
                 Log.e(TAG, "Player error: ${error.message} (code=${error.errorCode})")
                 _playbackState.value = VideoPlaybackState.ERROR
+                _playerError.value = mapExoError(error)
             }
         })
 
@@ -316,5 +322,87 @@ class ExoPlayerController(
         Player.STATE_READY -> VideoPlaybackState.READY
         Player.STATE_ENDED -> VideoPlaybackState.ENDED
         else -> VideoPlaybackState.IDLE
+    }
+
+    /**
+     * 将 ExoPlayer 的 [PlaybackException] 映射为统一的 [PlayerError]。
+     *
+     * ExoPlayer 的错误码体系：
+     * - [PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED]：网络连接失败
+     * - [PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT]：连接超时
+     * - [PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND]：文件未找到（404）
+     * - [PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS]：HTTP 状态码错误
+     * - [PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED]：明文 HTTP 被禁止
+     * - [PlaybackException.ERROR_CODE_DECODER_INIT_FAILED]：解码器初始化失败
+     * - [PlaybackException.ERROR_CODE_DRM_*]：DRM 相关错误
+     */
+    private fun mapExoError(error: PlaybackException): PlayerError {
+        return when (error.errorCode) {
+            PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> PlayerError(
+                type = PlayerErrorType.SOURCE_NOT_FOUND,
+                message = "视频资源不存在",
+                detail = error.message,
+                retryable = false,
+            )
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> PlayerError(
+                type = PlayerErrorType.NETWORK_ERROR,
+                message = "网络连接失败，请检查网络",
+                detail = error.message,
+                retryable = true,
+            )
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> PlayerError(
+                type = PlayerErrorType.TIMEOUT,
+                message = "连接超时，请稍后重试",
+                detail = error.message,
+                retryable = true,
+            )
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> {
+                // 尝试从错误消息中提取 HTTP 状态码
+                val statusCode = error.message?.let { msg ->
+                    Regex("HTTP (\\d+)").find(msg)?.groupValues?.get(1)?.toIntOrNull()
+                }
+                if (statusCode != null) {
+                    PlayerError.fromHttpStatusCode(statusCode, error.message)
+                } else {
+                    PlayerError(
+                        type = PlayerErrorType.NETWORK_ERROR,
+                        message = "服务器响应异常",
+                        detail = error.message,
+                        retryable = true,
+                    )
+                }
+            }
+            PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED -> PlayerError(
+                type = PlayerErrorType.FORBIDDEN,
+                message = "不安全的 HTTP 链接被禁止",
+                detail = error.message,
+                retryable = false,
+            )
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FAILED -> PlayerError(
+                type = PlayerErrorType.FORMAT_ERROR,
+                message = "视频格式不支持或已损坏",
+                detail = error.message,
+                retryable = false,
+            )
+            PlaybackException.ERROR_CODE_DRM_UNSPECIFIED,
+            PlaybackException.ERROR_CODE_DRM_SCHEME_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_DRM_PROVISIONING_FAILED,
+            PlaybackException.ERROR_CODE_DRM_CONTENT_ERROR,
+            PlaybackException.ERROR_CODE_DRM_LICENSE_ACQUISITION_FAILED,
+            PlaybackException.ERROR_CODE_DRM_DISALLOWED_OPERATION -> PlayerError(
+                type = PlayerErrorType.DRM_ERROR,
+                message = "DRM 解密失败，无法播放此视频",
+                detail = error.message,
+                retryable = false,
+            )
+            else -> PlayerError(
+                type = PlayerErrorType.UNKNOWN,
+                message = "播放出错",
+                detail = error.message,
+                retryable = true,
+            )
+        }
     }
 }

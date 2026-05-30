@@ -6,6 +6,8 @@ import com.example.kmp_demo.core.player.cache.CacheProxyServer
 import com.example.kmp_demo.core.player.cache.DebugLog
 import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
+import com.example.kmp_demo.core.player.domain.PlayerError
+import com.example.kmp_demo.core.player.domain.PlayerErrorType
 import com.example.kmp_demo.core.player.domain.VideoPlaybackState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,6 +47,13 @@ class DesktopVideoPlayerController(
          * 则自动将状态恢复为 PLAYING。
          */
         private const val SEEK_BUFFER_TIMEOUT_MS = 500L
+        /**
+         * 打开媒体后的缓冲超时时间（毫秒）。
+         * 如果在此时间内 VLC 没有成功播放（即 buffering 未达到 100%），
+         * 则判定为连接超时错误，触发错误弹框。
+         * 设置为 15 秒，给慢速网络留出足够时间。
+         */
+        private const val OPEN_BUFFER_TIMEOUT_MS = 15_000L
     }
 
     // ==================== VLCJ 核心组件 ====================
@@ -79,11 +88,20 @@ class DesktopVideoPlayerController(
         // 注册优化后的 VLCJ 事件监听器
         mediaPlayer.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
             override fun mediaChanged(mediaPlayer: MediaPlayer,media: MediaRef) {
+                // 如果已经处于 ERROR 状态，忽略 mediaChanged 事件
+                if (_playbackState.value == VideoPlaybackState.ERROR) {
+                    return
+                }
                 isVlcPlayingReady = false
                 _playbackState.value = VideoPlaybackState.BUFFERING
             }
 
             override fun playing(mediaPlayer: MediaPlayer) {
+                // 如果已经处于 ERROR 状态，忽略 playing 事件
+                // VLCJ 在无效链接上重试时可能会误触发 playing 事件
+                if (_playbackState.value == VideoPlaybackState.ERROR) {
+                    return
+                }
                 isVlcPlayingReady = true
                 // 只有当进度缓冲拉满，或者确认不在发生卡顿阻断时，才切换为 PLAYING
                 if (_bufferedPercent.value >= 100 || mediaPlayer.status().isPlaying) {
@@ -111,10 +129,22 @@ class DesktopVideoPlayerController(
             override fun error(mediaPlayer: MediaPlayer) {
                 isVlcPlayingReady = false
                 _playbackState.value = VideoPlaybackState.ERROR
+                _playerError.value = PlayerError(
+                    type = PlayerErrorType.UNKNOWN,
+                    message = "视频加载失败",
+                    detail = "VLC 无法加载此媒体资源，可能链接已失效或格式不支持",
+                    retryable = true,
+                )
                 stopPositionPolling()
             }
 
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) {
+                // 如果已经处于 ERROR 状态，忽略后续 buffering 事件
+                // 防止 VLCJ 在无效链接上无限重试时覆盖超时检测设置的 ERROR 状态
+                if (_playbackState.value == VideoPlaybackState.ERROR) {
+                    return
+                }
+
                 seekBufferingTriggered = true
 
                 // 将 0.0 ~ 1.0 归一化为 0 ~ 100 的整数进度
@@ -198,6 +228,9 @@ class DesktopVideoPlayerController(
     private val _bufferedPercent = MutableStateFlow(0)
     override val bufferedPercent: StateFlow<Int> = _bufferedPercent.asStateFlow()
 
+    private val _playerError = MutableStateFlow<PlayerError?>(null)
+    override val playerError: StateFlow<PlayerError?> = _playerError.asStateFlow()
+
     // ==================== 位置轮询 ====================
 
     private fun startPositionPolling() {
@@ -252,10 +285,32 @@ class DesktopVideoPlayerController(
         _playbackState.value = VideoPlaybackState.BUFFERING
         _currentPosition.value = 0L
         _bufferedPercent.value = 0
+        _playerError.value = null  // 清除之前的错误
 
         DebugLog.d("DesktopVideoPlayerController", "Playing URL: $url")
         mediaPlayer.media().play(url)
         DebugLog.d("DesktopVideoPlayerController", "mediaPlayer.media().play() returned")
+
+        // ========== 缓冲超时检测 ==========
+        // VLCJ 对于无效链接（如不存在的服务器）不会触发 error() 事件，
+        // 而是无限重试连接，导致播放器永远卡在 BUFFERING 状态。
+        // 这里启动一个超时协程：如果在 OPEN_BUFFER_TIMEOUT_MS 内
+        // 没有进入 PLAYING/ERROR/ENDED 状态，则自动判定为连接超时错误。
+        scope.launch {
+            delay(OPEN_BUFFER_TIMEOUT_MS)
+            val currentState = _playbackState.value
+            if (currentState == VideoPlaybackState.BUFFERING) {
+                DebugLog.d("DesktopVideoPlayerController", "open() timeout after ${OPEN_BUFFER_TIMEOUT_MS}ms, transitioning to ERROR")
+                _playbackState.value = VideoPlaybackState.ERROR
+                _playerError.value = PlayerError(
+                    type = PlayerErrorType.TIMEOUT,
+                    message = "连接超时，请稍后重试",
+                    detail = "播放器在 ${OPEN_BUFFER_TIMEOUT_MS / 1000} 秒内未能加载视频，可能链接已失效或网络不可达",
+                    retryable = true,
+                )
+                stopPositionPolling()
+            }
+        }
     }
 
     override suspend fun play() {

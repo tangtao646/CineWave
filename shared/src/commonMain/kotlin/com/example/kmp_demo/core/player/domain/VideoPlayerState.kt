@@ -16,7 +16,8 @@ data class VideoPlayerUiState(
     val volume: Float = 1.0f,
     val isFullScreen: Boolean = false,
     val isControlsVisible: Boolean = true,
-    val error: String? = null,
+    /** 详细的错误信息（当 [playbackState] 为 ERROR 时非空） */
+    val playerError: PlayerError? = null,
     /** 切片缓存状态列表，用于在 SeekBar 上标记已缓存/未缓存区域 */
     val cachedSegments: List<SegmentInfo> = emptyList(),
 ) {
@@ -39,6 +40,15 @@ data class VideoPlayerUiState(
     /** 是否处于缓冲中 */
     val isBuffering: Boolean
         get() = playbackState == VideoPlaybackState.BUFFERING
+
+    /** 是否处于错误状态 */
+    val isError: Boolean
+        get() = playbackState == VideoPlaybackState.ERROR
+
+    /** 错误消息（兼容旧版，从 [playerError] 派生） */
+    @Deprecated("Use playerError instead", ReplaceWith("playerError?.message"))
+    val error: String?
+        get() = playerError?.message
 
     companion object {
         fun formatDuration(ms: Long): String {
