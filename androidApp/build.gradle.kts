@@ -35,6 +35,9 @@ dependencies {
     implementation(libs.paging.common)
     implementation(libs.paging.compose)
 
+    // Sentry 性能监控 (Android App 层)
+    implementation(libs.sentry.android)
+
 }
 
 android {
@@ -48,15 +51,16 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    buildFeatures {
+        buildConfig = true
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
     buildTypes {
-        getByName("release") {
-            isMinifyEnabled = false
-        }
+
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

@@ -60,6 +60,9 @@ kotlin {
 
             implementation(libs.androidx.navigation.common.android)
 
+            // Sentry 性能监控 (Android)
+            implementation(libs.sentry.android)
+
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -140,6 +143,9 @@ kotlin {
 
             // 需要用户安装 VLC: brew install vlc
             implementation(libs.vlcj)
+
+            // Sentry 性能监控 (JVM/Desktop)
+            implementation(libs.sentry.jvm)
         }
     }
 }

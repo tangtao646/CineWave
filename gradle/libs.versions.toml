@@ -1,5 +1,6 @@
 [versions]
 agp = "9.2.1"
+sentry = "7.22.1"
 android-compileSdk = "37"
 android-minSdk = "24"
 android-targetSdk = "37"
@@ -49,6 +50,8 @@ vlcj = "4.8.2"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+sentry-android = { module = "io.sentry:sentry-android", version.ref = "sentry" }
+sentry-jvm = { module = "io.sentry:sentry", version.ref = "sentry" }
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
 androidx-testExt-junit = { module = "androidx.test.ext:junit", version.ref = "androidx-testExt" }
