@@ -1,9 +1,7 @@
 package com.example.kmp_demo.core.player.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,18 +12,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.kmp_demo.core.player.cache.SegmentInfo
 import com.example.kmp_demo.core.player.domain.VideoPlayerManager
 import com.example.kmp_demo.core.player.domain.VideoPlayerUiState
 
@@ -253,6 +253,15 @@ internal fun CenterPlayButton(
  * 当用户开始拖拽进度条时，通过 [onDragStart] 通知外部暂停自动隐藏倒计时；
  * 当用户结束拖拽时，通过 [onDragEnd] 通知外部恢复倒计时。
  * 这确保用户在拖拽过程中控制栏不会突然消失。
+ *
+ * ## 性能优化
+ *
+ * 1. **手势冲突修复**：移除外层的 pointerInput + detectTapGestures，
+ *    M3 Slider 内部已自带完善的 Tap 和 Drag 手势捕获，外层手势会与之冲突。
+ *
+ * 2. **Canvas 重组优化**：使用 Modifier.drawBehind 替代独立的 Canvas Composable，
+ *    配合 derivedStateOf 将缓存切片绘制与高频的 currentPosition 更新隔离，
+ *    避免 cachedSegments 未变化时因进度更新触发不必要的重绘。
  */
 @Composable
 private fun VideoProgressSlider(
@@ -260,90 +269,103 @@ private fun VideoProgressSlider(
     bufferedPercent: Int,
     onSeek: (Float) -> Unit,
     colors: SliderColors,
-    state: VideoPlayerUiState,  // 新增：用于获取缓存状态
-    onDragStart: () -> Unit = {},  // 开始拖拽回调（暂停自动隐藏倒计时）
-    onDragEnd: () -> Unit = {},    // 结束拖拽回调（恢复自动隐藏倒计时）
+    state: VideoPlayerUiState,
+    onDragStart: () -> Unit = {},
+    onDragEnd: () -> Unit = {},
 ) {
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableStateOf(0f) }
 
     val displayProgress = if (isDragging) dragProgress else progress
 
-    var sliderWidth by remember { mutableStateOf(0f) }
+    // 使用 derivedStateOf 将缓存切片绘制逻辑与高频进度更新隔离：
+    // 只有当 cachedSegments 或 duration 实际变化时，才重新计算绘制参数
+    val cacheSegmentsDrawParams by remember {
+        derivedStateOf {
+            if (state.cachedSegments.isNotEmpty() && state.duration > 0L) {
+                state.cachedSegments to state.duration
+            } else {
+                null to 0L
+            }
+        }
+    }
 
-    // 缓存区域颜色
-    val cachedColor = Color(0x66FF4444)  // 半透明红色
-    val uncachedColor = Color(0x33FFFFFF) // 半透明白色
+    // 缓存区域颜色（remember 避免每次重组重新创建 Color 对象）
+    val cachedColor = remember { Color(0x66FF4444) }   // 半透明红色
+    val uncachedColor = remember { Color(0x33FFFFFF) } // 半透明白色
 
-    Box(
+    // 使用 drawBehind 直接在 Slider 的底层绘制缓存标记，
+    // 避免独立的 Canvas Composable 带来的额外重组开销
+    val drawBehindModifier = remember(cacheSegmentsDrawParams) {
+        val (segments, duration) = cacheSegmentsDrawParams
+        if (segments != null && duration > 0L) {
+            Modifier.drawBehind {
+                drawCacheSegments(
+                    segments = segments,
+                    totalDuration = duration.toFloat(),
+                    cachedColor = cachedColor,
+                    uncachedColor = uncachedColor,
+                )
+            }
+        } else {
+            Modifier
+        }
+    }
+
+    // Material3 Slider（自带 Tap 和 Drag 手势，无需外层 pointerInput）
+    Slider(
+        value = displayProgress,
+        onValueChange = {
+            if (!isDragging) {
+                isDragging = true
+                onDragStart()
+            }
+            dragProgress = it
+        },
+        onValueChangeFinished = {
+            isDragging = false
+            onSeek(dragProgress)
+            onDragEnd()
+        },
+        colors = colors,
         modifier = Modifier
             .fillMaxWidth()
             .height(24.dp)
-            .onSizeChanged {
-                sliderWidth = it.width.toFloat()
-            }
-            .pointerInput(sliderWidth) {
-                detectTapGestures { offset ->
-                    if (sliderWidth > 0f) {
-                        val fraction = (offset.x / sliderWidth).coerceIn(0f, 1f)
-                        onSeek(fraction)
-                    }
-                }
-            }
-    ) {
-        // 缓存状态标记层（在 Slider 下方绘制）
-        if (state.cachedSegments.isNotEmpty() && state.duration > 0) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(24.dp)
-            ) {
-                val trackHeight = 4.dp.toPx()
-                val trackTop = (size.height - trackHeight) / 2f
-                val totalDuration = state.duration.toFloat()
+            .then(drawBehindModifier)
+            .semantics { testTag = "VideoProgressSlider" }
+    )
+}
 
-                // 绘制每个切片的缓存状态
-                state.cachedSegments.forEach { segment ->
-                    val startFraction = segment.startMs.toFloat() / totalDuration
-                    val widthFraction = segment.durationMs.toFloat() / totalDuration
+/**
+ * 在 DrawScope 中绘制缓存切片标记。
+ *
+ * 提取为顶层函数，避免在 Composable lambda 中持有不必要的闭包引用。
+ */
+private fun DrawScope.drawCacheSegments(
+    segments: List<SegmentInfo>,
+    totalDuration: Float,
+    cachedColor: Color,
+    uncachedColor: Color,
+) {
+    val trackHeight = 4.dp.toPx()
+    val trackTop = (size.height - trackHeight) / 2f
 
-                    val left = startFraction * size.width
-                    val segWidth = widthFraction * size.width
+    segments.forEach { segment ->
+        val startFraction = segment.startMs.toFloat() / totalDuration
+        val widthFraction = segment.durationMs.toFloat() / totalDuration
 
-                    // 跳过宽度为 0 的切片
-                    if (segWidth <= 0f) return@forEach
+        val left = startFraction * size.width
+        val segWidth = widthFraction * size.width
 
-                    val color = if (segment.isCached) cachedColor else uncachedColor
+        // 跳过宽度为 0 的切片
+        if (segWidth <= 0f) return@forEach
 
-                    // 绘制缓存标记条
-                    drawRect(
-                        color = color,
-                        topLeft = Offset(left, trackTop),
-                        size = Size(segWidth, trackHeight),
-                    )
-                }
-            }
-        }
+        val color = if (segment.isCached) cachedColor else uncachedColor
 
-        // Material3 Slider
-        Slider(
-            value = displayProgress,
-            onValueChange = {
-                if (!isDragging) {
-                    isDragging = true
-                    onDragStart()  // 暂停自动隐藏倒计时
-                }
-                dragProgress = it
-            },
-            onValueChangeFinished = {
-                isDragging = false
-                onSeek(dragProgress)
-                onDragEnd()  // 恢复自动隐藏倒计时
-            },
-            colors = colors,
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics { testTag = "VideoProgressSlider" }
+        drawRect(
+            color = color,
+            topLeft = Offset(left, trackTop),
+            size = Size(segWidth, trackHeight),
         )
     }
 }

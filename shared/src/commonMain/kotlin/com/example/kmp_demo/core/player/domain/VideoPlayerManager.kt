@@ -6,6 +6,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import com.example.kmp_demo.core.player.cache.SegmentInfo
 
 /**
  * 视频播放器业务编排层 (Orchestrator)
@@ -41,6 +42,29 @@ import kotlinx.coroutines.launch
  * @param controlsAutoHideService 控制栏自动隐藏服务
  * @param cacheOrchestrator 缓存编排器（可选）
  */
+/**
+ * 播放器核心状态中间聚合。
+ * 用于将 5 个高频更新的流合并为一个，减少 combine 嵌套层级。
+ */
+private data class PlaybackCoreState(
+    val playbackState: VideoPlaybackState,
+    val position: Long,
+    val duration: Long,
+    val bufferedPercent: Int,
+    val volume: Float,
+)
+
+/**
+ * UI 辅助状态中间聚合。
+ * 用于将 4 个低频更新的流合并为一个，减少 combine 嵌套层级。
+ */
+private data class UiAuxState(
+    val isFullScreen: Boolean,
+    val isControlsVisible: Boolean,
+    val playerError: PlayerError?,
+    val cachedSegments: List<SegmentInfo>,
+)
+
 class VideoPlayerManager(
     private val controller: IVideoPlayerController,
     private val controlsAutoHideService: ControlsAutoHideService = ControlsAutoHideService(),
@@ -68,38 +92,30 @@ class VideoPlayerManager(
             controller.playbackState,
             controller.currentPosition,
             controller.duration,
-            controller.bufferedPercent
-        ) { playbackState, position, duration, buffered ->
-            Triple(playbackState, position, duration) to buffered
-        },
-        combine(
+            controller.bufferedPercent,
             controller.volume,
-            controller.isFullScreen,
-            controlsAutoHideService.isControlsVisible
-        ) { volume, isFullScreen, controlsVisible ->
-            Triple(volume, isFullScreen, controlsVisible)
+        ) { playbackState, position, duration, bufferedPercent, volume ->
+            PlaybackCoreState(playbackState, position, duration, bufferedPercent, volume)
         },
         combine(
+            controller.isFullScreen,
+            controlsAutoHideService.isControlsVisible,
             controller.playerError,
             cacheOrchestrator?.cachedSegments ?: MutableStateFlow(emptyList())
-        ) { error, segments ->
-            error to segments
+        ) { isFullScreen, isControlsVisible, playerError, cachedSegments ->
+            UiAuxState(isFullScreen, isControlsVisible, playerError, cachedSegments)
         }
-    ) { core, ui, (playerError, cachedSegments) ->
-        val (playback, pos, dur) = core.first
-        val buffered = core.second
-        val (vol, full, visible) = ui
-
+    ) { core, aux ->
         VideoPlayerUiState(
-            playbackState = playback,
-            currentPosition = pos,
-            duration = dur,
-            bufferedPercent = buffered,
-            volume = vol,
-            isFullScreen = full,
-            isControlsVisible = visible,
-            playerError = playerError,
-            cachedSegments = cachedSegments,
+            playbackState = core.playbackState,
+            currentPosition = core.position,
+            duration = core.duration,
+            bufferedPercent = core.bufferedPercent,
+            volume = core.volume,
+            isFullScreen = aux.isFullScreen,
+            isControlsVisible = aux.isControlsVisible,
+            playerError = aux.playerError,
+            cachedSegments = aux.cachedSegments,
         )
     }.stateIn(
         scope = scope,

@@ -22,6 +22,13 @@ import kotlinx.coroutines.launch
  * 调用 [beginInteraction] 暂停倒计时，调用 [endInteraction] 恢复倒计时。
  * 这确保用户在操作过程中控制栏不会突然消失。
  *
+ * ## 设计原则
+ *
+ * 采用"主流播放器做法"：用户结束交互后，**始终给予完整的倒计时**，
+ * 而不是抠字眼计算扣除交互前浪费的时间。这消除了：
+ * - 竞态条件：不再依赖 [remainingMs] 和 [timerStartNanos] 的精确时序
+ * - 极端弱网/卡顿导致 remainingMs 归零，松手瞬间控制栏消失的生硬体验
+ *
  * ## 使用方式
  * ```kotlin
  * val autoHideService = ControlsAutoHideService()
@@ -50,20 +57,9 @@ class ControlsAutoHideService {
      * 用户是否正在与控制栏交互。
      *
      * 当 [isInteracting] 为 true 时，自动隐藏计时器暂停运行。
-     * 用户结束交互后，计时器从剩余时间继续倒计时。
+     * 用户结束交互后，计时器从头开始完整的倒计时。
      */
     private var isInteracting: Boolean = false
-
-    /**
-     * 记录计时器剩余时间（毫秒）。
-     *
-     * 当用户开始交互时，保存当前计时器的剩余时间；
-     * 当用户结束交互时，用此剩余时间恢复倒计时。
-     */
-    private var remainingMs: Long = autoHideDelayMs
-
-    /** 计时器启动时的时间戳（System.nanoTime），用于计算已过去的时间 */
-    private var timerStartNanos: Long = 0L
 
     /**
      * 显示控制栏并重启自动隐藏计时器。
@@ -121,15 +117,7 @@ class ControlsAutoHideService {
         if (!_isControlsVisible.value || isInteracting) return
         isInteracting = true
 
-        // 保存当前计时器的剩余时间
-        if (timerStartNanos > 0L) {
-            val elapsedMs = (System.nanoTime() - timerStartNanos) / 1_000_000
-            remainingMs = (autoHideDelayMs - elapsedMs).coerceAtLeast(0L)
-        } else {
-            remainingMs = autoHideDelayMs
-        }
-
-        // 取消当前计时器
+        // 取消当前计时器，暂停倒计时
         autoHideJob?.cancel()
         autoHideJob = null
     }
@@ -137,7 +125,9 @@ class ControlsAutoHideService {
     /**
      * 标记用户结束与控制栏交互。
      *
-     * 调用此方法后，自动隐藏计时器将从暂停处恢复倒计时。
+     * 调用此方法后，自动隐藏计时器**从头开始完整的倒计时**。
+     * 这是主流播放器的做法（如 YouTube、Infuse），
+     * 避免因弱网/卡顿导致剩余时间归零而生硬消失。
      *
      * 适用于：
      * - 用户松开进度条滑块（结束拖拽）
@@ -148,9 +138,9 @@ class ControlsAutoHideService {
         if (!isInteracting) return
         isInteracting = false
 
-        // 从剩余时间恢复倒计时
+        // 用户结束交互后，始终给予完整的倒计时
         if (_isControlsVisible.value) {
-            startTimerWithRemaining(remainingMs)
+            restartTimer()
         }
     }
 
@@ -174,21 +164,9 @@ class ControlsAutoHideService {
     private fun restartTimer() {
         autoHideJob?.cancel()
         isInteracting = false
-        remainingMs = autoHideDelayMs
-        timerStartNanos = System.nanoTime()
 
         autoHideJob = scope.launch {
             delay(autoHideDelayMs)
-            _isControlsVisible.value = false
-        }
-    }
-
-    private fun startTimerWithRemaining(remaining: Long) {
-        autoHideJob?.cancel()
-        timerStartNanos = System.nanoTime()
-
-        autoHideJob = scope.launch {
-            delay(remaining)
             _isControlsVisible.value = false
         }
     }
