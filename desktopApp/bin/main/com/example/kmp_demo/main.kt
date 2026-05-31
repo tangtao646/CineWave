@@ -46,7 +46,7 @@ fun main() = application {
 
     Window(
         onCloseRequest = ::exitApplication,
-        title = "CineWave",
+        title = "影播",
         state = windowState,
         onPreviewKeyEvent = { keyEvent ->
             // 在 Compose 窗口级别拦截 ESC 键，阻止系统默认回退行为
