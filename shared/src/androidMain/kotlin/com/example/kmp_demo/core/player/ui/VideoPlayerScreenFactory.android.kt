@@ -3,12 +3,6 @@ package com.example.kmp_demo.core.player.ui
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -16,7 +10,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
@@ -142,17 +135,6 @@ actual fun PlatformVideoPlayerScreen(
                     modifier = modifier,
                 )
             },
-            // ========== 平台插槽：修饰符 ==========
-            topBarModifier = Modifier.windowInsetsPadding(
-                WindowInsets.statusBars.only(
-                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                )
-            ),
-            bottomBarModifier = Modifier.windowInsetsPadding(
-                WindowInsets.systemBars.only(
-                    WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal
-                )
-            ),
             // ========== 平台插槽：资源释放 ==========
             onPlatformDispose = {
                 fullscreenController.exitFullscreen()

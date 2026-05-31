@@ -67,8 +67,8 @@ fun VideoPlayerControls(
 
     // 竖屏模式下隐藏音量控制和选集按钮（移动端空间紧凑）
     val isPortrait = LocalIsPortrait.current
-    val effectiveShowVolumeControl = !isPortrait
-    val effectiveShowEpisodeSelector = showEpisodeSelector && !isPortrait
+    val effectiveShowControl = !isPortrait
+    val effectiveShowEpisodeSelector = showEpisodeSelector && effectiveShowControl
 
 
 
@@ -95,6 +95,8 @@ fun VideoPlayerControls(
                 onSeek = { fraction -> onAction(PlayerAction.SeekToFraction(fraction)) },
                 colors = sliderColor,
                 state = state,  // 传入状态以获取缓存信息
+                onDragStart = { onAction(PlayerAction.BeginSeekDrag) },
+                onDragEnd = { onAction(PlayerAction.EndSeekDrag) },
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -119,7 +121,7 @@ fun VideoPlayerControls(
                         modifier = Modifier.padding(start = 4.dp)
                     )
 
-                    if (effectiveShowVolumeControl) {
+                    if (effectiveShowControl) {
                         Spacer(modifier = Modifier.width(8.dp))
                         VolumeControl(
                             volume = state.volume,
@@ -134,6 +136,8 @@ fun VideoPlayerControls(
                                     onAction(PlayerAction.SetVolume(previousVolume))
                                 }
                             },
+                            onDragStart = { onAction(PlayerAction.BeginVolumeDrag) },
+                            onDragEnd = { onAction(PlayerAction.EndVolumeDrag) },
                         )
                     }
                 }
@@ -143,7 +147,7 @@ fun VideoPlayerControls(
                     modifier = Modifier.align(Alignment.Center),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (showSeekButtons) {
+                    if (showSeekButtons && effectiveShowControl) {
                         PlayerIconButton(
                             icon = Icons.Default.Replay10,
                             contentDescription = "快退 10 秒",
@@ -158,7 +162,7 @@ fun VideoPlayerControls(
                         onClick = { onAction(PlayerAction.TogglePlayPause) }
                     )
 
-                    if (showSeekButtons) {
+                    if (showSeekButtons && effectiveShowControl) {
                         PlayerIconButton(
                             icon = Icons.Default.Forward10,
                             contentDescription = "快进 10 秒",
@@ -243,6 +247,12 @@ internal fun CenterPlayButton(
  * - ⬜ 灰色区域 = 未缓存，需要网络加载
  *
  * 参考市面上的加速播放器（如 PotPlayer、IINA、Infuse）的缓存可视化设计。
+ *
+ * ## 交互感知
+ *
+ * 当用户开始拖拽进度条时，通过 [onDragStart] 通知外部暂停自动隐藏倒计时；
+ * 当用户结束拖拽时，通过 [onDragEnd] 通知外部恢复倒计时。
+ * 这确保用户在拖拽过程中控制栏不会突然消失。
  */
 @Composable
 private fun VideoProgressSlider(
@@ -251,6 +261,8 @@ private fun VideoProgressSlider(
     onSeek: (Float) -> Unit,
     colors: SliderColors,
     state: VideoPlayerUiState,  // 新增：用于获取缓存状态
+    onDragStart: () -> Unit = {},  // 开始拖拽回调（暂停自动隐藏倒计时）
+    onDragEnd: () -> Unit = {},    // 结束拖拽回调（恢复自动隐藏倒计时）
 ) {
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableStateOf(0f) }
@@ -316,10 +328,17 @@ private fun VideoProgressSlider(
         // Material3 Slider
         Slider(
             value = displayProgress,
-            onValueChange = { dragProgress = it; isDragging = true },
+            onValueChange = {
+                if (!isDragging) {
+                    isDragging = true
+                    onDragStart()  // 暂停自动隐藏倒计时
+                }
+                dragProgress = it
+            },
             onValueChangeFinished = {
                 isDragging = false
                 onSeek(dragProgress)
+                onDragEnd()  // 恢复自动隐藏倒计时
             },
             colors = colors,
             modifier = Modifier
@@ -361,16 +380,28 @@ private fun PlayerIconButton(
  * - 拖动滑块调节音量
  * - 滑块宽度固定，不占用过多空间
  *
+ * ## 交互感知
+ *
+ * 当用户开始拖拽音量滑块时，通过 [onDragStart] 通知外部暂停自动隐藏倒计时；
+ * 当用户结束拖拽时，通过 [onDragEnd] 通知外部恢复倒计时。
+ * 这确保用户在调节音量过程中控制栏不会突然消失。
+ *
  * @param volume 当前音量 0.0 ~ 1.0
  * @param onVolumeChange 音量变化回调
  * @param onToggleMute 静音切换回调
+ * @param onDragStart 开始拖拽回调（暂停自动隐藏倒计时）
+ * @param onDragEnd 结束拖拽回调（恢复自动隐藏倒计时）
  */
 @Composable
 private fun VolumeControl(
     volume: Float,
     onVolumeChange: (Float) -> Unit,
     onToggleMute: () -> Unit,
+    onDragStart: () -> Unit = {},
+    onDragEnd: () -> Unit = {},
 ) {
+    var isDragging by remember { mutableStateOf(false) }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.width(140.dp)
@@ -400,7 +431,17 @@ private fun VolumeControl(
         // 音量滑块
         Slider(
             value = volume,
-            onValueChange = onVolumeChange,
+            onValueChange = {
+                if (!isDragging) {
+                    isDragging = true
+                    onDragStart()
+                }
+                onVolumeChange(it)
+            },
+            onValueChangeFinished = {
+                isDragging = false
+                onDragEnd()
+            },
             valueRange = 0f..1f,
             modifier = Modifier
                 .width(72.dp)
@@ -469,14 +510,32 @@ sealed interface PlayerAction {
     data object ToggleFullScreen : PlayerAction
     data object TogglePip : PlayerAction
     data object ToggleControls : PlayerAction
+
     /** 设置音量 0.0 ~ 1.0 */
     data class SetVolume(val volume: Float) : PlayerAction
+
     /** 切换静音（在 0 和上次音量之间切换） */
     data object ToggleMute : PlayerAction
+
     /** 清除磁盘缓存 */
     data object ClearCache : PlayerAction
+
     /** 重试播放（错误恢复） */
     data object Retry : PlayerAction
+
+    // ========== 交互状态（用于暂停/恢复自动隐藏倒计时）==========
+
+    /** 用户开始拖拽进度条（暂停自动隐藏倒计时） */
+    data object BeginSeekDrag : PlayerAction
+
+    /** 用户结束拖拽进度条（恢复自动隐藏倒计时） */
+    data object EndSeekDrag : PlayerAction
+
+    /** 用户开始调节音量（暂停自动隐藏倒计时） */
+    data object BeginVolumeDrag : PlayerAction
+
+    /** 用户结束调节音量（恢复自动隐藏倒计时） */
+    data object EndVolumeDrag : PlayerAction
 }
 
 /**
@@ -484,6 +543,20 @@ sealed interface PlayerAction {
  *
  * 消除 Android 端 [handlePlayerAction] 与 Desktop 端 [handleDesktopPlayerAction]
  * 之间的重复代码。各平台只需调用此函数即可。
+ *
+ * ## 自动隐藏倒计时重置策略
+ *
+ * 所有用户操作（除 [PlayerAction.ToggleControls] 外）都会自动重置控制栏的
+ * 自动隐藏倒计时。这解决了用户点击快进/快退/音量等按钮时，
+ * 控制栏在操作中途突然消失的问题。
+ *
+ * 具体策略：
+ * - [PlayerAction.ToggleControls]：不重置倒计时（切换显隐由 ControlsAutoHideService 内部管理）
+ * - [PlayerAction.TogglePlayPause]：重置倒计时（播放/暂停是主动操作）
+ * - [PlayerAction.SeekForward]/[PlayerAction.SeekBackward]：重置倒计时（快进/快退后需要时间查看画面）
+ * - [PlayerAction.SeekToFraction]/[PlayerAction.SeekToMs]：重置倒计时（拖拽进度条后需要时间查看画面）
+ * - [PlayerAction.SetVolume]：重置倒计时（调节音量后需要时间确认音量大小）
+ * - 其他操作：重置倒计时
  *
  * ## 平台差异说明
  * - [PlayerAction.TogglePip]：Android 使用 ExoPlayer 原生实现，Desktop 不支持，此处均为空操作
@@ -497,15 +570,40 @@ internal fun handlePlayerAction(
     action: PlayerAction,
 ) {
     when (action) {
-        PlayerAction.TogglePlayPause -> manager.togglePlayPause()
-        is PlayerAction.SeekForward -> manager.seekForward(action.seconds)
-        is PlayerAction.SeekBackward -> manager.seekBackward(action.seconds)
-        is PlayerAction.SeekToFraction -> manager.seekToFraction(action.fraction)
-        is PlayerAction.SeekToMs -> manager.seekTo(action.positionMs)
-        PlayerAction.ToggleFullScreen -> manager.toggleFullScreen()
+        PlayerAction.TogglePlayPause -> {
+            manager.togglePlayPause()
+            manager.showControlsAndResetTimer()
+        }
+        is PlayerAction.SeekForward -> {
+            manager.seekForward(action.seconds)
+            manager.showControlsAndResetTimer()
+        }
+        is PlayerAction.SeekBackward -> {
+            manager.seekBackward(action.seconds)
+            manager.showControlsAndResetTimer()
+        }
+        is PlayerAction.SeekToFraction -> {
+            manager.seekToFraction(action.fraction)
+            manager.showControlsAndResetTimer()
+        }
+        is PlayerAction.SeekToMs -> {
+            manager.seekTo(action.positionMs)
+            manager.showControlsAndResetTimer()
+        }
+        PlayerAction.ToggleFullScreen -> {
+            manager.toggleFullScreen()
+            manager.showControlsAndResetTimer()
+        }
         PlayerAction.TogglePip -> { /* 平台自行决定是否支持画中画 */ }
-        PlayerAction.ToggleControls -> manager.toggleControls()
-        is PlayerAction.SetVolume -> manager.setVolume(action.volume)
+
+        PlayerAction.ToggleControls -> {
+            // ToggleControls 不重置倒计时，由 ControlsAutoHideService 内部管理
+            manager.toggleControls()
+        }
+        is PlayerAction.SetVolume -> {
+            manager.setVolume(action.volume)
+            manager.showControlsAndResetTimer()
+        }
         PlayerAction.ToggleMute -> {
             val currentVolume = manager.uiState.value.volume
             if (currentVolume > 0f) {
@@ -513,8 +611,27 @@ internal fun handlePlayerAction(
             } else {
                 manager.setVolume(1.0f)
             }
+            manager.showControlsAndResetTimer()
         }
         PlayerAction.ClearCache -> { /* 平台自行决定缓存清理策略 */ }
-        PlayerAction.Retry -> manager.retry()
+        PlayerAction.Retry -> {
+            manager.retry()
+            manager.showControlsAndResetTimer()
+        }
+
+        // ========== 交互状态处理（暂停/恢复自动隐藏倒计时）==========
+
+        PlayerAction.BeginSeekDrag -> {
+            manager.beginControlsInteraction()
+        }
+        PlayerAction.EndSeekDrag -> {
+            manager.endControlsInteraction()
+        }
+        PlayerAction.BeginVolumeDrag -> {
+            manager.beginControlsInteraction()
+        }
+        PlayerAction.EndVolumeDrag -> {
+            manager.endControlsInteraction()
+        }
     }
 }

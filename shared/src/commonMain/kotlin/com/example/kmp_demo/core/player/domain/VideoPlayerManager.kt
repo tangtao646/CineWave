@@ -185,6 +185,34 @@ class VideoPlayerManager(
     fun hideControls() = controlsAutoHideService.hide()
     fun toggleControls() = controlsAutoHideService.toggle()
 
+    /**
+     * 显示控制栏并重置自动隐藏倒计时。
+     *
+     * 与 [showControls] 的区别：
+     * - [showControls]：强制显示并从头开始倒计时
+     * - [showControlsAndResetTimer]：如果控制栏已可见，仅重置倒计时；如果不可见，则显示
+     *
+     * 适用于用户点击控制栏上的按钮（快进、快退、音量等）时调用，
+     * 确保用户操作后倒计时重新开始，不会在操作中途消失。
+     */
+    fun showControlsAndResetTimer() = controlsAutoHideService.showAndResetTimer()
+
+    /**
+     * 标记用户开始与控制栏交互（如拖拽进度条、调节音量）。
+     *
+     * 调用后自动隐藏计时器暂停，控制栏保持可见。
+     * 必须与 [endControlsInteraction] 成对使用。
+     */
+    fun beginControlsInteraction() = controlsAutoHideService.beginInteraction()
+
+    /**
+     * 标记用户结束与控制栏交互。
+     *
+     * 调用后自动隐藏计时器从暂停处恢复倒计时。
+     * 必须与 [beginControlsInteraction] 成对使用。
+     */
+    fun endControlsInteraction() = controlsAutoHideService.endInteraction()
+
     fun setAutoHideDelay(delayMs: Long) {
         controlsAutoHideService.setAutoHideDelay(delayMs)
     }
