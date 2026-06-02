@@ -25,6 +25,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import androidx.core.net.toUri
 
 /**
  * 基于 ExoPlayer (Media3) + SimpleCache 的 Android 原生播放器控制器。
@@ -120,13 +121,22 @@ class ExoPlayerController(
     init {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 15_000,
-                /* maxBufferMs = */ 50_000,
-                /* bufferForPlaybackMs = */ 2_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 5_000,
+                30_000, // minBufferMs: 提高最小缓冲到30秒，保证后续播放平滑
+                60_000, // maxBufferMs: 最大缓冲60秒
+                2_000,  // bufferForPlaybackMs: 降低到2秒，实现秒开、极速起播
+                5_000   // bufferForPlaybackAfterRebufferMs: 跌入二次缓冲后，攒满5秒就继续播，避免长等待
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
+
+        // 1. 创建自适应重试并降低网络错误敏感度的 LoadErrorHandlingPolicy
+        val customErrorHandlingPolicy =
+            object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
+                override fun getMinimumLoadableRetryCount(dataType: Int): Int {
+                    // 针对 HLS 的媒体切片(DATA_TYPE_MEDIA)，提高容错重试次数，防止直接抛异常卡死
+                    return if (dataType == C.DATA_TYPE_MEDIA) 6 else 3
+                }
+            }
 
         player = ExoPlayer.Builder(context)
             .setAudioAttributes(
@@ -137,7 +147,11 @@ class ExoPlayerController(
                 /* handleAudioFocus = */ true
             )
             // 注入带缓存的 HLS 媒体源工厂
-            .setMediaSourceFactory(HlsMediaSource.Factory(cacheDataSourceFactory))
+            .setMediaSourceFactory(
+                HlsMediaSource.Factory(cacheDataSourceFactory)
+                    .setAllowChunklessPreparation(true)
+                    .setLoadErrorHandlingPolicy(customErrorHandlingPolicy)
+            )
             .setLoadControl(loadControl)
             .setHandleAudioBecomingNoisy(true)
             .build()
@@ -146,7 +160,9 @@ class ExoPlayerController(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) {
                     _playbackState.value = VideoPlaybackState.PLAYING
+                    startPositionPolling() // 开始轮询
                 } else {
+                    stopPositionPolling()  // 停止轮询，释放主线程
                     if (_playbackState.value == VideoPlaybackState.PLAYING) {
                         _playbackState.value = VideoPlaybackState.PAUSED
                     }
@@ -170,35 +186,45 @@ class ExoPlayerController(
         })
 
         _volume.value = player.volume
-        startPositionPolling()
     }
 
     // ==================== 位置轮询 ====================
 
     private fun startPositionPolling() {
-        positionPollingJob?.cancel()
-        positionPollingJob = scope.launch {
+        if (positionPollingJob?.isActive == true) return // 避免重复创建
+        positionPollingJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
-                try {
+                if (player.isPlaying) { // 仅在真正播放时读取
                     _currentPosition.value = player.currentPosition
                     val dur = player.duration.coerceAtLeast(0L)
                     if (dur > 0L) {
                         _duration.value = dur
-                        _bufferedPercent.value =
-                            ((player.bufferedPosition.toFloat() / dur) * 100)
-                                .toInt().coerceIn(0, 100)
+                        _bufferedPercent.value = ((player.bufferedPosition.toFloat() / dur) * 100)
+                            .toInt().coerceIn(0, 100)
                     }
-                } catch (_: Exception) { /* 播放器尚未就绪 */
                 }
                 delay(POLL_INTERVAL_MS)
             }
         }
     }
 
+    private fun stopPositionPolling() {
+        positionPollingJob?.cancel()
+        positionPollingJob = null
+    }
+
+
+
     // ==================== IVideoPlayerController ====================
 
     @OptIn(UnstableApi::class)
     override suspend fun open(url: String, headers: Map<String, String>?) {
+        //暂停上一个视频播放
+        if (_playbackState.value == VideoPlaybackState.PLAYING) {
+            player.stop()
+        }
+        //每次开新视频时，顺便在后台瞅一眼缓存满了没，满了就自动咔嚓掉旧的
+        exoCache.checkAndTrimCache()
         _playbackState.value = VideoPlaybackState.BUFFERING
         try {
             // 如果有自定义请求头，重建上游工厂（SimpleCache 不感知 headers，只透传给上游）
@@ -219,7 +245,7 @@ class ExoPlayerController(
             val mediaSource = HlsMediaSource.Factory(factory)
                 .createMediaSource(
                     MediaItem.Builder()
-                        .setUri(Uri.parse(url))
+                        .setUri(url.toUri())
                         .setMediaId(url)
                         .build()
                 )
@@ -344,18 +370,21 @@ class ExoPlayerController(
                 detail = error.message,
                 retryable = false,
             )
+
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> PlayerError(
                 type = PlayerErrorType.NETWORK_ERROR,
                 message = "网络连接失败，请检查网络",
                 detail = error.message,
                 retryable = true,
             )
+
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> PlayerError(
                 type = PlayerErrorType.TIMEOUT,
                 message = "连接超时，请稍后重试",
                 detail = error.message,
                 retryable = true,
             )
+
             PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> {
                 // 尝试从错误消息中提取 HTTP 状态码
                 val statusCode = error.message?.let { msg ->
@@ -372,12 +401,14 @@ class ExoPlayerController(
                     )
                 }
             }
+
             PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED -> PlayerError(
                 type = PlayerErrorType.FORBIDDEN,
                 message = "不安全的 HTTP 链接被禁止",
                 detail = error.message,
                 retryable = false,
             )
+
             PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
             PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
             PlaybackException.ERROR_CODE_DECODING_FAILED -> PlayerError(
@@ -386,6 +417,7 @@ class ExoPlayerController(
                 detail = error.message,
                 retryable = false,
             )
+
             PlaybackException.ERROR_CODE_DRM_UNSPECIFIED,
             PlaybackException.ERROR_CODE_DRM_SCHEME_UNSUPPORTED,
             PlaybackException.ERROR_CODE_DRM_PROVISIONING_FAILED,
@@ -397,6 +429,7 @@ class ExoPlayerController(
                 detail = error.message,
                 retryable = false,
             )
+
             else -> PlayerError(
                 type = PlayerErrorType.UNKNOWN,
                 message = "播放出错",
