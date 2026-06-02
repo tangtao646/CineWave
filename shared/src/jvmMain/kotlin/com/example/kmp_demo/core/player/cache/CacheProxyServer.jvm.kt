@@ -1,5 +1,6 @@
 package com.example.kmp_demo.core.player.cache
 
+import com.example.kmp_demo.core.PlatformLogger
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -80,7 +81,7 @@ class CacheProxyServerJvm(
 
     override suspend fun start(): Int {
         stop()
-        DebugLog.d(TAG, "start() called, binding to port $PROXY_PORT...")
+        PlatformLogger.d(TAG, "start() called, binding to port $PROXY_PORT...")
 
         val engine = embeddedServer(Netty, port = PROXY_PORT) {
             routing {
@@ -92,7 +93,7 @@ class CacheProxyServerJvm(
         _port = PROXY_PORT
         server = engine
         statsCollector.setRunning(_port)
-        DebugLog.d(TAG, "start() completed, port=$_port")
+        PlatformLogger.d(TAG, "start() completed, port=$_port")
         return _port
     }
 
@@ -104,15 +105,15 @@ class CacheProxyServerJvm(
         get("/m3u8") {
             val originalUrl = call.request.queryParameters["url"]
                 ?: return@get call.respondText("Missing 'url' parameter", status = HttpStatusCode.BadRequest)
-            DebugLog.d(TAG, "/m3u8 request received, originalUrl=$originalUrl")
+            PlatformLogger.d(TAG, "/m3u8 request received, originalUrl=$originalUrl")
             val headers = parseHeaders(call)
 
             try {
                 val content = handler.value.handle(originalUrl, headers, PROXY_PORT)
-                DebugLog.d(TAG, "/m3u8 response prepared, length=${content.length}")
+                PlatformLogger.d(TAG, "/m3u8 response prepared, length=${content.length}")
                 call.respondText(content, contentType = ContentType("application", "vnd.apple.mpegurl"))
             } catch (e: Exception) {
-                DebugLog.d(TAG, "/m3u8 error: ${e.message}")
+                PlatformLogger.d(TAG, "/m3u8 error: ${e.message}")
                 call.respondText("#EXTM3U\n#EXT-X-ENDLIST", contentType = ContentType("application", "vnd.apple.mpegurl"), status = HttpStatusCode.BadGateway)
             }
         }
@@ -122,13 +123,13 @@ class CacheProxyServerJvm(
         get("/ts") {
             val originalUrl = call.request.queryParameters["url"]
                 ?: return@get call.respondText("Missing 'url' parameter", status = HttpStatusCode.BadRequest)
-            DebugLog.d(TAG, "/ts request received, originalUrl=$originalUrl")
+            PlatformLogger.d(TAG, "/ts request received, originalUrl=$originalUrl")
             val extraHeaders = parseHeaders(call)
 
             // ── 缓存命中：流式读取 ──
             val cachedSource = diskCache.getSource(originalUrl)
             if (cachedSource != null) {
-                DebugLog.d(TAG, "/ts cache HIT for $originalUrl")
+                PlatformLogger.d(TAG, "/ts cache HIT for $originalUrl")
                 statsCollector.recordHit(0L)
                 call.respondBytesWriter(ContentType.parse("video/MP2T")) {
                     cachedSource.buffer().use { src ->
@@ -140,12 +141,12 @@ class CacheProxyServerJvm(
                         }
                     }
                 }
-                DebugLog.d(TAG, "/ts cache HIT response completed")
+                PlatformLogger.d(TAG, "/ts cache HIT response completed")
                 return@get
             }
 
             // ── 缓存未命中：边下边发，响应结束后异步写缓存 ──
-            DebugLog.d(TAG, "/ts cache MISS for $originalUrl, fetching upstream...")
+            PlatformLogger.d(TAG, "/ts cache MISS for $originalUrl, fetching upstream...")
             statsCollector.recordMiss(0L)
             val collectedChunks = mutableListOf<ByteArray>()
 
@@ -153,7 +154,7 @@ class CacheProxyServerJvm(
                 val upstreamResponse = httpClient.get(originalUrl) {
                     extraHeaders?.forEach { (k, v) -> header(k, v) }
                 }
-                DebugLog.d(TAG, "/ts upstream response status=${upstreamResponse.status}")
+                PlatformLogger.d(TAG, "/ts upstream response status=${upstreamResponse.status}")
                 val upstreamChannel = upstreamResponse.bodyAsChannel()
                 val contentTypeStr = upstreamResponse.contentType()?.toString() ?: "video/MP2T"
 
@@ -168,7 +169,7 @@ class CacheProxyServerJvm(
                             totalBytes += n
                         }
                     }
-                    DebugLog.d(TAG, "/ts streaming completed, totalBytes=$totalBytes")
+                    PlatformLogger.d(TAG, "/ts streaming completed, totalBytes=$totalBytes")
                 }
 
                 // 响应结束后异步写入磁盘缓存（不阻塞 VLCJ）
@@ -181,14 +182,14 @@ class CacheProxyServerJvm(
                                 sink.write(buffer, buffer.size)
                             }
                             statsCollector.recordCachedSegment()
-                            DebugLog.d(TAG, "/ts cache write completed for $originalUrl")
+                            PlatformLogger.d(TAG, "/ts cache write completed for $originalUrl")
                         } catch (e: Exception) {
-                            DebugLog.d(TAG, "/ts cache write failed: ${e.message}")
+                            PlatformLogger.d(TAG, "/ts cache write failed: ${e.message}")
                         }
                     }
                 }
             } catch (e: Exception) {
-                DebugLog.d(TAG, "/ts upstream error: ${e.message}")
+                PlatformLogger.d(TAG, "/ts upstream error: ${e.message}")
                 if (!call.response.isSent) {
                     call.respondText("Upstream error: ${e.message}", status = HttpStatusCode.BadGateway)
                 }

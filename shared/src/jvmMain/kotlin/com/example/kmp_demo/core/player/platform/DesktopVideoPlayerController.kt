@@ -3,7 +3,7 @@ package com.example.kmp_demo.core.player.platform
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
-import com.example.kmp_demo.core.player.cache.DebugLog
+import com.example.kmp_demo.core.PlatformLogger
 import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.PlayerError
@@ -280,16 +280,16 @@ class DesktopVideoPlayerController(
     // ==================== IPlayerController 实现 ====================
 
     override suspend fun open(url: String, headers: Map<String, String>?) {
-        DebugLog.d("DesktopVideoPlayerController", "open() called, url=$url")
+        PlatformLogger.d("DesktopVideoPlayerController", "open() called, url=$url")
         isVlcPlayingReady = false
         _playbackState.value = VideoPlaybackState.BUFFERING
         _currentPosition.value = 0L
         _bufferedPercent.value = 0
         _playerError.value = null  // 清除之前的错误
 
-        DebugLog.d("DesktopVideoPlayerController", "Playing URL: $url")
+        PlatformLogger.d("DesktopVideoPlayerController", "Playing URL: $url")
         mediaPlayer.media().play(url)
-        DebugLog.d("DesktopVideoPlayerController", "mediaPlayer.media().play() returned")
+        PlatformLogger.d("DesktopVideoPlayerController", "mediaPlayer.media().play() returned")
 
         // ========== 缓冲超时检测 ==========
         // VLCJ 对于无效链接（如不存在的服务器）不会触发 error() 事件，
@@ -300,7 +300,7 @@ class DesktopVideoPlayerController(
             delay(OPEN_BUFFER_TIMEOUT_MS)
             val currentState = _playbackState.value
             if (currentState == VideoPlaybackState.BUFFERING) {
-                DebugLog.d("DesktopVideoPlayerController", "open() timeout after ${OPEN_BUFFER_TIMEOUT_MS}ms, transitioning to ERROR")
+                PlatformLogger.d("DesktopVideoPlayerController", "open() timeout after ${OPEN_BUFFER_TIMEOUT_MS}ms, transitioning to ERROR")
                 _playbackState.value = VideoPlaybackState.ERROR
                 _playerError.value = PlayerError(
                     type = PlayerErrorType.TIMEOUT,

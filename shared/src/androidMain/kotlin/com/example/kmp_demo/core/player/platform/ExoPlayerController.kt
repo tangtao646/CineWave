@@ -2,7 +2,7 @@ package com.example.kmp_demo.core.player.platform
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
+import com.example.kmp_demo.core.PlatformLogger
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -175,11 +175,11 @@ class ExoPlayerController(
                 if (mapped != VideoPlaybackState.READY || _playbackState.value != VideoPlaybackState.PLAYING) {
                     _playbackState.value = mapped
                 }
-                Log.d(TAG, "ExoPlayer state=$state → $mapped")
+                PlatformLogger.d(TAG, "ExoPlayer state=$state → $mapped")
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Log.e(TAG, "Player error: ${error.message} (code=${error.errorCode})")
+                PlatformLogger.e(TAG, "Player error: ${error.message} (code=${error.errorCode})")
                 _playbackState.value = VideoPlaybackState.ERROR
                 _playerError.value = mapExoError(error)
             }
@@ -253,9 +253,9 @@ class ExoPlayerController(
             player.setMediaSource(mediaSource)
             player.prepare()
             player.play()
-            Log.d(TAG, "Opening: $url")
+            PlatformLogger.d(TAG, "Opening: $url")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to open: ${e.message}")
+            PlatformLogger.e(TAG, "Failed to open: ${e.message}")
             _playbackState.value = VideoPlaybackState.ERROR
         }
     }
@@ -265,7 +265,7 @@ class ExoPlayerController(
             if (player.playbackState == Player.STATE_IDLE) player.prepare()
             player.play()
         } catch (e: Exception) {
-            Log.e(TAG, "play() error: ${e.message}")
+            PlatformLogger.e(TAG, "play() error: ${e.message}")
         }
     }
 
@@ -273,7 +273,7 @@ class ExoPlayerController(
         try {
             player.pause()
         } catch (e: Exception) {
-            Log.e(TAG, "pause() error: ${e.message}")
+            PlatformLogger.e(TAG, "pause() error: ${e.message}")
         }
     }
 
@@ -285,7 +285,7 @@ class ExoPlayerController(
                 player.play()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "togglePlayPause() error: ${e.message}")
+            PlatformLogger.e(TAG, "togglePlayPause() error: ${e.message}")
         }
     }
 
@@ -293,7 +293,7 @@ class ExoPlayerController(
         try {
             player.seekTo(positionMs)
         } catch (e: Exception) {
-            Log.e(TAG, "seekTo() error: ${e.message}")
+            PlatformLogger.e(TAG, "seekTo() error: ${e.message}")
         }
     }
 
@@ -303,7 +303,7 @@ class ExoPlayerController(
                 .coerceAtMost(player.duration.coerceAtLeast(0L))
             player.seekTo(newPos)
         } catch (e: Exception) {
-            Log.e(TAG, "seekForward() error: ${e.message}")
+            PlatformLogger.e(TAG, "seekForward() error: ${e.message}")
         }
     }
 
@@ -312,7 +312,7 @@ class ExoPlayerController(
             val newPos = (player.currentPosition - seconds * 1000).coerceAtLeast(0L)
             player.seekTo(newPos)
         } catch (e: Exception) {
-            Log.e(TAG, "seekBackward() error: ${e.message}")
+            PlatformLogger.e(TAG, "seekBackward() error: ${e.message}")
         }
     }
 
@@ -321,7 +321,7 @@ class ExoPlayerController(
             player.volume = volume.coerceIn(0f, 1f)
             _volume.value = volume
         } catch (e: Exception) {
-            Log.e(TAG, "setVolume() error: ${e.message}")
+            PlatformLogger.e(TAG, "setVolume() error: ${e.message}")
         }
     }
 

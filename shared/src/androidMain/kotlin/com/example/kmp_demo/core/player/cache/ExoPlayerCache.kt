@@ -1,7 +1,7 @@
 package com.example.kmp_demo.core.player.cache
 
 import android.content.Context
-import android.util.Log
+import com.example.kmp_demo.core.PlatformLogger
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.DatabaseProvider
@@ -62,10 +62,10 @@ class ExoPlayerCache(
                 val currentMB = currentBytes / (1024 * 1024)
                 val triggerMB = triggerThreshold / (1024 * 1024)
 
-                Log.d(TAG, "缓存状态检查: 当前 ${currentMB}MB / 触发线 ${triggerMB}MB")
+                PlatformLogger.d(TAG, "缓存状态检查: 当前 ${currentMB}MB / 触发线 ${triggerMB}MB")
 
                 if (currentBytes >= triggerThreshold) {
-                    Log.w(TAG, "⚠️ 缓存已达到 90% 临界点，启动后台大缓存清理...")
+                    PlatformLogger.w(TAG, "⚠️ 缓存已达到 90% 临界点，启动后台大缓存清理...")
 
                     // 获取当前所有缓存资源的 key，并按最后访问时间升序排序（最久未访问的在前）
                     val sortedKeys = cache.keys.mapNotNull { key ->
@@ -90,10 +90,10 @@ class ExoPlayerCache(
                     }
 
                     val freedMBAfter = (cache.cacheSpace / (1024 * 1024))
-                    Log.i(TAG, "✅ 后台清理完成！缓存已从 ${freedMBBefore}MB 降至 ${freedMBAfter}MB，已释放大片连续写入空间。")
+                    PlatformLogger.i(TAG, "✅ 后台清理完成！缓存已从 ${freedMBBefore}MB 降至 ${freedMBAfter}MB，已释放大片连续写入空间。")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "主动清理缓存时发生异常: ${e.message}", e)
+                PlatformLogger.e(TAG, "主动清理缓存时发生异常: ${e.message}", e)
             }
         }
     }

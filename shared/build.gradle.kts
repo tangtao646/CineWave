@@ -146,6 +146,7 @@ kotlin {
 
             // Sentry 性能监控 (JVM/Desktop)
             implementation(libs.sentry.jvm)
+
         }
     }
 }

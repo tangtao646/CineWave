@@ -3,7 +3,7 @@ package com.example.kmp_demo.core.player.ui
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.*
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
-import com.example.kmp_demo.core.player.cache.DebugLog
+import com.example.kmp_demo.core.PlatformLogger
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.CacheOrchestrator
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
@@ -100,7 +100,7 @@ actual fun PlatformVideoPlayerScreen(
         if (resolvedUrl == lastOpenedUrl && retryTrigger == 0) return@LaunchedEffect
         lastOpenedUrl = resolvedUrl
 
-        DebugLog.d("[PlatformVideoPlayerScreen]"," resolvedUrl = $resolvedUrl")
+        PlatformLogger.d("[PlatformVideoPlayerScreen]"," resolvedUrl = $resolvedUrl")
         manager.open(resolvedUrl, headers)
     }
 
