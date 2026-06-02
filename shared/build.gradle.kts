@@ -1,5 +1,11 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+/**
+ * 日志开关 — 通过 Gradle property 控制。
+ * 本地开发默认 true，CI/CD 打包时通过 -PlogEnabled=false 关闭。
+ */
+val logEnabled: Boolean = project.findProperty("logEnabled")?.toString()?.toBooleanStrictOrNull() ?: true
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidMultiplatformLibrary)
@@ -149,6 +155,53 @@ kotlin {
 
         }
     }
+}
+
+// ============================================================
+// 生成 BuildConfig.kt（现代 KMP 最佳实践，移除了 afterEvaluate）
+// ============================================================
+
+// 1. 定义一个标准的独立 Task 类（规范化 Inputs / Outputs）
+abstract class GenerateBuildConfigTask : DefaultTask() {
+    @get:Input
+    abstract val logEnabled: Property<Boolean>
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val dir = outputDirectory.get().asFile
+        val outputFile = File(dir, "com/example/kmp_demo/core/BuildConfig.kt")
+        outputFile.parentFile.mkdirs()
+
+        outputFile.writeText("""
+            package com.example.kmp_demo.core
+
+            /**
+             * 日志总开关 — 由 Gradle 构建时注入。
+             * 本地开发默认 true，CI/CD 打包时通过 -PlogEnabled=false 关闭。
+             */
+            const val LOG_ENABLED = ${logEnabled.get()}
+        """.trimIndent())
+    }
+}
+
+// 2. 注册 Task 并利用 Providers 延迟获取 Property
+val generateBuildConfig = tasks.register<GenerateBuildConfigTask>("generateBuildConfig") {
+    logEnabled.set(
+        providers.provider {
+            project.findProperty("logEnabled")?.toString()?.toBooleanStrictOrNull() ?: true
+        }
+    )
+    // 自动定位到 build 托管的生成目录
+    outputDirectory.set(project.layout.buildDirectory.dir("generated/buildconfig/commonMain"))
+}
+
+// 3. 【核心关联】直接注入源码集。
+// 这一行在底层会自动为你搞定 compileKotlin / ksp 等所有任务的 dependsOn 关系，无需手动干预。
+kotlin.sourceSets.getByName("commonMain") {
+    kotlin.srcDir(generateBuildConfig.map { it.outputDirectory })
 }
 
 room {

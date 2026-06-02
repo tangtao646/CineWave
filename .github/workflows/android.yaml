@@ -9,9 +9,9 @@ env:
 
 jobs:
   android-build:
-    name: Build Android App (APK + AAB)
+    name: Build Android App (Release Only)
     runs-on: ubuntu-latest
-    
+
     permissions:
       contents: write
 
@@ -28,30 +28,32 @@ jobs:
           echo "${{ secrets.TMDB_API_KEY }}" > shared/src/commonMain/composeResources/files/tmdb_api_key.txt
           echo "✅ tmdb_api_key.txt injected successfully ($(wc -c < shared/src/commonMain/composeResources/files/tmdb_api_key.txt) bytes)"
 
-      - name: Setup JDK 11
+      # 【修复】将 JDK 11 升级至现代 KMP / Android 必备的 JDK 17
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '11'
+          java-version: '17'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
-      - name: Build Android APK (Debug)
+      # 【优化】打出真正用于分发的 Release 版 APK，日志控制依然生效
+      - name: Build Android APK (Release)
         run: |
-          ./gradlew :androidApp:assembleDebug --no-daemon
+          ./gradlew :androidApp:assembleRelease -PlogEnabled=false --no-daemon
 
       - name: Build Android AAB (Release)
         run: |
-          ./gradlew :androidApp:bundleRelease --no-daemon
+          ./gradlew :androidApp:bundleRelease -PlogEnabled=false --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk-debug
-          path: androidApp/build/outputs/apk/debug/*.apk
+          name: android-apk-release
+          path: androidApp/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7
 
@@ -73,8 +75,9 @@ jobs:
             
             - 构建详情: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             - 代码提交: ${{ github.sha }}
+          # 【修复】只将真正的 release 产物对外公开暴露
           files: |
-            androidApp/build/outputs/apk/debug/*.apk
+            androidApp/build/outputs/apk/release/*.apk
             androidApp/build/outputs/bundle/release/*.aab
           generate_release_notes: true
           make_latest: true
