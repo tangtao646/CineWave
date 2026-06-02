@@ -61,7 +61,13 @@ android {
     }
     signingConfigs {
         create("release") {
-            storeFile = file(project.findProperty("androidKeystoreFile")?.toString() ?: "/Users/tangtao/android_project.jks")
+            val keystoreFileName = project.findProperty("androidKeystoreFile")?.toString() ?: "/Users/tangtao/android_project.jks"
+            // 如果是绝对路径直接用 file()，否则用 rootProject.file()（相对于项目根目录）
+            storeFile = if (keystoreFileName.startsWith("/")) {
+                file(keystoreFileName)
+            } else {
+                rootProject.file(keystoreFileName)
+            }
             storePassword = project.findProperty("androidKeystorePassword")?.toString() ?: "123456"
             keyAlias = project.findProperty("androidKeyAlias")?.toString() ?: "key0"
             keyPassword = project.findProperty("androidKeyPassword")?.toString() ?: "123456"
