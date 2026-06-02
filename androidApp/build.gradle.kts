@@ -59,8 +59,21 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    signingConfigs {
+        create("release") {
+            storeFile = file(project.findProperty("androidKeystoreFile")?.toString() ?: "/Users/tangtao/android_project.jks")
+            storePassword = project.findProperty("androidKeystorePassword")?.toString() ?: "123456"
+            keyAlias = project.findProperty("androidKeyAlias")?.toString() ?: "key0"
+            keyPassword = project.findProperty("androidKeyPassword")?.toString() ?: "123456"
+        }
+    }
     buildTypes {
-
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+        }
+        release {
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

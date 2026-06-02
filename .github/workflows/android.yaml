@@ -28,6 +28,12 @@ jobs:
           echo "${{ secrets.TMDB_API_KEY }}" > shared/src/commonMain/composeResources/files/tmdb_api_key.txt
           echo "✅ tmdb_api_key.txt injected successfully ($(wc -c < shared/src/commonMain/composeResources/files/tmdb_api_key.txt) bytes)"
 
+      # 【签名】从 GitHub Secrets 还原 keystore 文件
+      - name: Restore Android Keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android_app_keystore.jks
+          echo "✅ Keystore restored successfully ($(wc -c < android_app_keystore.jks) bytes)"
+
       # 【修复】将 JDK 11 升级至现代 KMP / Android 必备的 JDK 17
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -43,11 +49,23 @@ jobs:
       # 【优化】打出真正用于分发的 Release 版 APK，日志控制依然生效
       - name: Build Android APK (Release)
         run: |
-          ./gradlew :androidApp:assembleRelease -PlogEnabled=false --no-daemon
+          ./gradlew :androidApp:assembleRelease \
+            -PlogEnabled=false \
+            -PandroidKeystoreFile=android_app_keystore.jks \
+            -PandroidKeystorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            -PandroidKeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} \
+            -PandroidKeyPassword=${{ secrets.ANDROID_KEY_PASSWORD }} \
+            --no-daemon
 
       - name: Build Android AAB (Release)
         run: |
-          ./gradlew :androidApp:bundleRelease -PlogEnabled=false --no-daemon
+          ./gradlew :androidApp:bundleRelease \
+            -PlogEnabled=false \
+            -PandroidKeystoreFile=android_app_keystore.jks \
+            -PandroidKeystorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            -PandroidKeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} \
+            -PandroidKeyPassword=${{ secrets.ANDROID_KEY_PASSWORD }} \
+            --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
