@@ -31,8 +31,16 @@ jobs:
       # 【签名】从 GitHub Secrets 还原 keystore 文件
       - name: Restore Android Keystore
         run: |
-          echo "${{ vars.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android_app_keystore.jks
-          echo "✅ Keystore restored successfully"
+          cat << 'EOF' > keystore.base64
+          ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          EOF
+          
+          # 🚀 -i 参数强行忽略可能残留的换行干扰，安全还原为二进制
+          base64 -d -i keystore.base64 > android_app_keystore.jks
+          
+          # 清理临时文本
+          rm keystore.base64
+          echo "✅ Keystore restored successfully ($(wc -c < android_app_keystore.jks) bytes)"
 
       # 【修复】将 JDK 11 升级至现代 KMP / Android 必备的 JDK 17
       - name: Setup JDK 17
@@ -52,9 +60,9 @@ jobs:
           ./gradlew :androidApp:assembleRelease \
             -PlogEnabled=false \
             -PandroidKeystoreFile=android_app_keystore.jks \
-            -PandroidKeystorePassword=${{ vars.ANDROID_KEYSTORE_PASSWORD }} \  
-            -PandroidKeyAlias=${{ vars.ANDROID_KEY_ALIAS }} \                  
-            -PandroidKeyPassword=${{ vars.ANDROID_KEY_PASSWORD }} \
+            -PandroidKeystorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            -PandroidKeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} \
+            -PandroidKeyPassword=${{ secrets.ANDROID_KEY_PASSWORD }} \
             --no-daemon
 
       - name: Build Android AAB (Release)
