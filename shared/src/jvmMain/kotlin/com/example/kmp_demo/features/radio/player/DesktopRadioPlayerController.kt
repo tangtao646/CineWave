@@ -1,5 +1,6 @@
 package com.example.kmp_demo.features.radio.player
 
+import com.example.kmp_demo.core.PlatformLogger
 import com.example.kmp_demo.features.radio.domain.player.AppPlaybackState
 import com.example.kmp_demo.features.radio.domain.player.IRadioPlayerController
 import com.example.kmp_demo.features.radio.domain.player.MediaMetadataInfo
@@ -11,9 +12,6 @@ import uk.co.caprica.vlcj.media.MediaRef
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
-import java.io.FileWriter
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 /**
  * Desktop 电台播放器 — 基于 VLCJ
@@ -32,13 +30,7 @@ class DesktopRadioPlayerController(
 ) : IRadioPlayerController {
 
     companion object {
-        private const val LOG_FILE = "radio_player_debug.log"
-        private fun log(msg: String) {
-            try {
-                val time = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
-                FileWriter(LOG_FILE, true).use { it.write("[$time] $msg\n") }
-            } catch (_: Exception) { }
-        }
+        private const val TAG = "DesktopRadioPlayerController"
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -64,20 +56,20 @@ class DesktopRadioPlayerController(
     override val errorEvents: SharedFlow<String> = _errorEvents.asSharedFlow()
 
     init {
-        log("=== DesktopRadioPlayerController init ===")
+        PlatformLogger.d(TAG, "=== DesktopRadioPlayerController init ===")
         // 尝试发现本地 VLC 安装
         val discovery = NativeDiscovery()
         val found = discovery.discover()
-        log("NativeDiscovery: found=$found")
+        PlatformLogger.d(TAG, "NativeDiscovery: found=$found")
         if (found) {
-            log("VLC path: ${discovery.discoveredPath()}")
+            PlatformLogger.d(TAG, "VLC path: ${discovery.discoveredPath()}")
         } else {
-            log("VLC not found! Please install VLC: brew install vlc")
+            PlatformLogger.d(TAG, "VLC not found! Please install VLC: brew install vlc")
         }
     }
 
     override suspend fun setPlaylist(items: List<PlayableMedia>, startIndex: Int) {
-        log("=== setPlaylist: items.size=${items.size}, startIndex=$startIndex")
+        PlatformLogger.d(TAG, "=== setPlaylist: items.size=${items.size}, startIndex=$startIndex")
         currentPlaylist = items
         currentIndex = startIndex
         if (startIndex in items.indices) {
@@ -86,7 +78,7 @@ class DesktopRadioPlayerController(
     }
 
     private suspend fun loadAndPlay(item: PlayableMedia) {
-        log("loadAndPlay: ${item.title}, uri=${item.uri.take(80)}")
+        PlatformLogger.d(TAG, "loadAndPlay: ${item.title}, uri=${item.uri.take(80)}")
         _currentMediaId.value = item.id
         _playbackState.value = AppPlaybackState.BUFFERING
         _isPlaying.value = false
@@ -99,14 +91,14 @@ class DesktopRadioPlayerController(
 
         withContext(Dispatchers.Default) {
             try {
-                log("Creating MediaPlayer...")
+                PlatformLogger.d(TAG, "Creating MediaPlayer...")
                 val player = mediaPlayerFactory.mediaPlayers().newMediaPlayer()
                 mediaPlayer = player
 
                 // 设置事件监听
                 player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
                     override fun mediaPlayerReady(mediaPlayer: MediaPlayer) {
-                        log("VLCJ: mediaPlayerReady")
+                        PlatformLogger.d(TAG, "VLCJ: mediaPlayerReady")
                         _playbackState.value = AppPlaybackState.READY
                         _isPlaying.value = true
                         isPaused = false
@@ -116,31 +108,31 @@ class DesktopRadioPlayerController(
                     }
 
                     override fun playing(mediaPlayer: MediaPlayer) {
-                        log("VLCJ: playing")
+                        PlatformLogger.d(TAG, "VLCJ: playing")
                         _playbackState.value = AppPlaybackState.READY
                         _isPlaying.value = true
                     }
 
                     override fun paused(mediaPlayer: MediaPlayer) {
-                        log("VLCJ: paused")
+                        PlatformLogger.d(TAG, "VLCJ: paused")
                         _isPlaying.value = false
                     }
 
                     override fun stopped(mediaPlayer: MediaPlayer) {
-                        log("VLCJ: stopped")
+                        PlatformLogger.d(TAG, "VLCJ: stopped")
                         _isPlaying.value = false
                         _playbackState.value = AppPlaybackState.IDLE
                     }
 
                     override fun finished(mediaPlayer: MediaPlayer) {
-                        log("VLCJ: finished")
+                        PlatformLogger.d(TAG, "VLCJ: finished")
                         _playbackState.value = AppPlaybackState.ENDED
                         _isPlaying.value = false
                     }
 
                     override fun error(mediaPlayer: MediaPlayer) {
                         val msg = "VLCJ播放错误"
-                        log("VLCJ: error")
+                        PlatformLogger.d(TAG, "VLCJ: error")
                         if (!readyDeferred.isCompleted) {
                             readyDeferred.complete(Result.failure(RuntimeException(msg)))
                         } else {
@@ -150,11 +142,11 @@ class DesktopRadioPlayerController(
                     }
                 })
 
-                log("Starting playback: ${item.uri}")
+                PlatformLogger.d(TAG, "Starting playback: ${item.uri}")
                 player.media().play(item.uri)
-                log("VLCJ play() called, waiting for ready...")
+                PlatformLogger.d(TAG, "VLCJ play() called, waiting for ready...")
             } catch (e: Exception) {
-                log("Failed to create/start VLCJ: ${e.message}")
+                PlatformLogger.d(TAG, "Failed to create/start VLCJ: ${e.message}")
                 if (!readyDeferred.isCompleted) {
                     readyDeferred.complete(Result.failure(e))
                 }
@@ -165,15 +157,15 @@ class DesktopRadioPlayerController(
         try {
             val result = withTimeout(30_000L) { readyDeferred.await() }
             result.fold(
-                onSuccess = { log("Playback started successfully") },
-                onFailure = { error ->
-                    log("Playback failed: ${error.message}")
+            onSuccess = { PlatformLogger.d(TAG, "Playback started successfully") },
+            onFailure = { error ->
+                PlatformLogger.d(TAG, "Playback failed: ${error.message}")
                     _errorEvents.tryEmit("播放失败: ${error.message}")
                     _playbackState.value = AppPlaybackState.ERROR
                 }
             )
         } catch (e: Exception) {
-            log("Timeout waiting for playback: ${e.message}")
+            PlatformLogger.d(TAG, "Timeout waiting for playback: ${e.message}")
             _errorEvents.tryEmit("播放启动超时")
             _playbackState.value = AppPlaybackState.ERROR
         }
@@ -187,29 +179,29 @@ class DesktopRadioPlayerController(
     }
 
     override suspend fun play() {
-        log("play()")
+        PlatformLogger.d(TAG, "play()")
         isPaused = false
         try {
             mediaPlayer?.controls()?.play()
             _isPlaying.value = true
         } catch (e: Exception) {
-            log("play() error: ${e.message}")
+            PlatformLogger.d(TAG, "play() error: ${e.message}")
         }
     }
 
     override suspend fun pause() {
-        log("pause()")
+        PlatformLogger.d(TAG, "pause()")
         isPaused = true
         try {
             mediaPlayer?.controls()?.pause()
             _isPlaying.value = false
         } catch (e: Exception) {
-            log("pause() error: ${e.message}")
+            PlatformLogger.d(TAG, "pause() error: ${e.message}")
         }
     }
 
     override suspend fun stop() {
-        log("stop()")
+        PlatformLogger.d(TAG, "stop()")
         try {
             mediaPlayer?.controls()?.stop()
         } catch (_: Exception) { }
@@ -218,7 +210,7 @@ class DesktopRadioPlayerController(
     }
 
     override suspend fun skipToNext() {
-        log("skipToNext: currentIndex=$currentIndex, playlist.size=${currentPlaylist.size}")
+        PlatformLogger.d(TAG, "skipToNext: currentIndex=$currentIndex, playlist.size=${currentPlaylist.size}")
         if (currentPlaylist.isNotEmpty() && currentIndex < currentPlaylist.size - 1) {
             currentIndex++
             loadAndPlay(currentPlaylist[currentIndex])
@@ -226,7 +218,7 @@ class DesktopRadioPlayerController(
     }
 
     override suspend fun skipToPrevious() {
-        log("skipToPrevious: currentIndex=$currentIndex, playlist.size=${currentPlaylist.size}")
+        PlatformLogger.d(TAG, "skipToPrevious: currentIndex=$currentIndex, playlist.size=${currentPlaylist.size}")
         if (currentPlaylist.isNotEmpty() && currentIndex > 0) {
             currentIndex--
             loadAndPlay(currentPlaylist[currentIndex])
@@ -234,7 +226,7 @@ class DesktopRadioPlayerController(
     }
 
     override fun release() {
-        log("release()")
+        PlatformLogger.d(TAG, "release()")
         releaseMediaPlayer()
         scope.cancel()
     }
