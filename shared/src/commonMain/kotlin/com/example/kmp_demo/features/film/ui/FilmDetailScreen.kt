@@ -32,6 +32,7 @@ import coil3.compose.AsyncImage
 import com.example.kmp_demo.core.components.PageContainer
 import com.example.kmp_demo.core.components.VideoSourceListContent
 import com.example.kmp_demo.core.components.shimmer
+import com.example.kmp_demo.core.player.domain.EpisodeInfo
 import com.example.kmp_demo.features.film.domain.model.CastMember
 import com.example.kmp_demo.features.film.domain.model.MovieDetail
 import com.example.kmp_demo.features.film.domain.model.VideoSource
@@ -42,7 +43,7 @@ import org.koin.compose.viewmodel.koinViewModel
 @Composable
 fun FilmDetailScreen(
     onBackClick: () -> Unit,
-    onNavigateToPlayer: (url: String, title: String) -> Unit,
+    onNavigateToPlayer: (url: String, title: String, episodes: List<EpisodeInfo>) -> Unit,
     viewModel: FilmDetailViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -52,7 +53,7 @@ fun FilmDetailScreen(
         viewModel.uiEffect.collect { effect ->
             when (effect) {
                 is FilmDetailContract.Effect.NavigateToPlayer -> {
-                    onNavigateToPlayer(effect.url, effect.title)
+                    onNavigateToPlayer(effect.url, effect.title, effect.episodes)
                 }
 
                 is FilmDetailContract.Effect.ShowToast -> {
@@ -183,67 +184,6 @@ fun MovieDetailContent(
     }
 }
 
-@Composable
-fun VideoSourceItem(
-    source: VideoSource,
-    onPlayClick: () -> Unit,
-) {
-    val clipboardManager = LocalClipboardManager.current
-
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "源: ${source.sourceSite}",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "${source.quality} • ${source.format.uppercase()}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = source.url,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = {
-                    clipboardManager.setText(AnnotatedString(source.url))
-                }) {
-                    Icon(
-                        Icons.Default.ContentCopy,
-                        contentDescription = "复制",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-
-                IconButton(onClick = onPlayClick) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = "播放",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-
-            }
-        }
-    }
-}
 
 @Composable
 fun CastItem(member: CastMember) {

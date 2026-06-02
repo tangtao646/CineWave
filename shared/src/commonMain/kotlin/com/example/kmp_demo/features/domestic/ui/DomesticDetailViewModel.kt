@@ -1,7 +1,7 @@
 package com.example.kmp_demo.features.domestic.ui
 
 import androidx.lifecycle.viewModelScope
-import com.example.kmp_demo.core.BaseMviViewModel
+import com.example.kmp_demo.core.BaseDetailViewModel
 import com.example.kmp_demo.core.IUiEffect
 import com.example.kmp_demo.core.IUiIntent
 import com.example.kmp_demo.core.IUiState
@@ -10,9 +10,6 @@ import com.example.kmp_demo.core.player.domain.EpisodeInfo
 import com.example.kmp_demo.core.videosource.domain.VideoSource
 import com.example.kmp_demo.features.domestic.domain.model.DomesticMedia
 import com.example.kmp_demo.features.domestic.domain.repository.DomesticRepository
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -63,19 +60,9 @@ class DomesticDetailContract {
 class DomesticDetailViewModel(
     private val repository: DomesticRepository,
     private val mediaTitle: String,
-) : BaseMviViewModel<DomesticDetailContract.State, DomesticDetailContract.Intent, DomesticDetailContract.Effect>(
+) : BaseDetailViewModel<DomesticDetailContract.State, DomesticDetailContract.Intent, DomesticDetailContract.Effect>(
     initialState = DomesticDetailContract.State()
 ) {
-
-    /**
-     * 剧集列表缓存，供播放器页（[DomesticPlayerScreen]）通过共享 ViewModel 读取。
-     *
-     * 当详情页嗅探到播放源后，自动转换为 [EpisodeInfo] 列表并缓存。
-     * 播放器页通过 `koinViewModel()` 获取同一 ViewModel 实例来读取此缓存，
-     * 避免将大量剧集数据序列化到导航参数中。
-     */
-    private val _episodesCache = MutableStateFlow<List<EpisodeInfo>>(emptyList())
-    val episodesCache: StateFlow<List<EpisodeInfo>> = _episodesCache.asStateFlow()
 
     init {
         loadDetail()
@@ -112,30 +99,16 @@ class DomesticDetailViewModel(
     }
 
     fun onPlay(source: VideoSource) {
-        viewModelScope.launch {
-            try {
-                // 将 VideoSource 列表转换为 EpisodeInfo 列表
-                val episodes = currentState.videoSources.mapIndexed { index, vs ->
-                    EpisodeInfo(
-                        index = index,
-                        label = "第${index + 1}集",
-                        url = vs.url,
-                        title = vs.quality,
-                    )
-                }
-                // 更新缓存，供播放器页通过共享 ViewModel 读取
-                _episodesCache.value = episodes
-
-                sendEffect(
-                    DomesticDetailContract.Effect.NavigateToPlayer(
-                        url = source.url,
-                        title = currentState.media?.title ?: mediaTitle,
-                        episodes = episodes,
-                    )
-                )
-            } catch (e: Exception) {
-                sendEffect(DomesticDetailContract.Effect.ShowToast("播放准备失败: ${e.message}"))
+        preparePlayback(
+            source = source,
+            videoSources = currentState.videoSources,
+            title = currentState.media?.title ?: mediaTitle,
+            navigateEffect = { url, title, episodes ->
+                DomesticDetailContract.Effect.NavigateToPlayer(url, title, episodes)
+            },
+            toastEffect = { message ->
+                DomesticDetailContract.Effect.ShowToast(message)
             }
-        }
+        )
     }
 }

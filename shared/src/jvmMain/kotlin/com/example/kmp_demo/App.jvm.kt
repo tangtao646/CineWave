@@ -257,8 +257,7 @@ fun App() {
                                             FilmDetailScreen(
                                                 viewModel = viewModel,
                                                 onBackClick = { backStack.removeLast() },
-                                                onNavigateToPlayer = { url, title ->
-                                                    val episodes = viewModel.episodesCache.value
+                                                onNavigateToPlayer = { url, title, episodes ->
                                                     backStack.add(
                                                         DesktopRoute.FilmPlayer(
                                                             url,
@@ -278,8 +277,7 @@ fun App() {
                                                 onBack = {
                                                     isFullScreen = false
                                                     backStack.removeLast()
-                                                },
-                                                onFullScreenChange = { full -> isFullScreen = full }
+                                                }
                                             )
                                         }
 
@@ -330,8 +328,7 @@ fun App() {
                                                 onBack = {
                                                     isFullScreen = false
                                                     backStack.removeLast()
-                                                },
-                                                onFullScreenChange = { full -> isFullScreen = full }
+                                                }
                                             )
                                         }
 

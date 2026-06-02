@@ -193,7 +193,10 @@ class DesktopRadioPlayerController(
         PlatformLogger.d(TAG, "pause()")
         isPaused = true
         try {
-            mediaPlayer?.controls()?.pause()
+            // 使用 setPause(true) 而非 pause()，因为 VLCJ 的 pause() 是切换式调用，
+            // 对网络流媒体（HLS/HTTP 直播流）可能因内部缓冲机制自动恢复播放。
+            // setPause(true) 明确设置暂停状态，避免切换行为。
+            mediaPlayer?.controls()?.setPause(true)
             _isPlaying.value = false
         } catch (e: Exception) {
             PlatformLogger.d(TAG, "pause() error: ${e.message}")
