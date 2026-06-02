@@ -41,7 +41,7 @@ val domesticModuleJvm = module {
     viewModel { params ->
         DomesticDetailViewModel(
             repository = get(),
-            mediaTitle = params.get(),
+            mediaTitle = params.get<String>(),
         )
     }
 }
