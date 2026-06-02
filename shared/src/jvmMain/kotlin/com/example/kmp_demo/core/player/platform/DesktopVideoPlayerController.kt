@@ -2,6 +2,7 @@ package com.example.kmp_demo.core.player.platform
 
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import com.example.kmp_demo.core.player.cache.CacheMaintenanceStrategy
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
 import com.example.kmp_demo.core.PlatformLogger
 import com.example.kmp_demo.core.player.domain.FullscreenController
@@ -35,6 +36,7 @@ import java.nio.ByteBuffer
 class DesktopVideoPlayerController(
     private val mediaPlayerFactory: MediaPlayerFactory,
     private val proxyServer: CacheProxyServer? = null,
+    private val cacheMaintenance: CacheMaintenanceStrategy? = null,
     private val fullscreenController: FullscreenController? = null
 ) : IVideoPlayerController {
 
@@ -281,6 +283,10 @@ class DesktopVideoPlayerController(
 
     override suspend fun open(url: String, headers: Map<String, String>?) {
         PlatformLogger.d("DesktopVideoPlayerController", "open() called, url=$url")
+
+        // 每次开新视频时，检查缓存是否达到阈值，自动清理最久未访问的缓存
+        cacheMaintenance?.checkAndTrim()
+
         isVlcPlayingReady = false
         _playbackState.value = VideoPlaybackState.BUFFERING
         _currentPosition.value = 0L

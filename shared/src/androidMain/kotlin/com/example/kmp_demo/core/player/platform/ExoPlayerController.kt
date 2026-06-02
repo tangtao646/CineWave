@@ -224,7 +224,7 @@ class ExoPlayerController(
             player.stop()
         }
         //每次开新视频时，顺便在后台瞅一眼缓存满了没，满了就自动咔嚓掉旧的
-        exoCache.checkAndTrimCache()
+        exoCache.checkAndTrim()
         _playbackState.value = VideoPlaybackState.BUFFERING
         try {
             // 如果有自定义请求头，重建上游工厂（SimpleCache 不感知 headers，只透传给上游）

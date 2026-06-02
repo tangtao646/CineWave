@@ -6,8 +6,10 @@ import com.example.kmp_demo.core.data.local.room.AndroidAppContext
 import com.example.kmp_demo.core.data.local.room.AppDatabase
 import com.example.kmp_demo.core.data.local.room.getDatabaseBuilder
 import com.example.kmp_demo.core.data.local.room.getRoomDatabase
+import com.example.kmp_demo.core.player.cache.CacheMaintenanceStrategy
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.ExoPlayerCache
+import com.example.kmp_demo.core.player.cache.LruCacheMaintenanceStrategy
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
@@ -26,7 +28,7 @@ import org.koin.dsl.module
  * 从旧的「本地 HTTP 代理 (CacheProxyServer)」切换为
  * ExoPlayer 原生「SimpleCache + CacheDataSource」方案。
  *
- * - [ExoPlayerCache]：管理 SimpleCache 生命周期，全局单例
+ * - [ExoPlayerCache]：管理 SimpleCache 生命周期，全局单例，同时实现 [CacheMaintenanceStrategy]
  * - [DiskLruCache]：仍保留，供 SegmentCacheTracker 的 SeekBar 缓存可视化使用
  */
 @OptIn(UnstableApi::class)
@@ -43,6 +45,12 @@ actual val platformModule: Module = module {
         ExoPlayerCache(context = AndroidAppContext.context)
     }
 
+    // === Cache Maintenance Strategy ===
+    // 统一的 LRU 缓存维护策略，委托给 ExoPlayerCache 实现
+    single<CacheMaintenanceStrategy> {
+        LruCacheMaintenanceStrategy(delegate = get<ExoPlayerCache>())
+    }
+
     // === DiskLruCache（供 SegmentCacheTracker SeekBar 可视化使用） ===
     // ExoPlayer 的 SimpleCache 已接管实际缓存，DiskLruCache 只用于读取缓存状态展示
     single<DiskLruCache> {
@@ -54,8 +62,6 @@ actual val platformModule: Module = module {
     single<SegmentCacheTracker> {
         SegmentCacheTracker(diskCache = get())
     }
-
-
 
     // === Video Player Controller (ExoPlayer + SimpleCache) ===
     // factory{} 而非 single{}：每次进入播放页创建新实例，退出时 release() 销毁

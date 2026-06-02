@@ -43,14 +43,16 @@ import okio.buffer
  */
 class DiskLruCache(
     private val cacheDir: String,
-    private val maxSizeBytes: Long = 5L * 1024 * 1024 * 1024, // 5GB
+    override val maxBytes: Long = 5L * 1024 * 1024 * 1024, // 5GB
     private val fileSystem: FileSystem = FileSystem.SYSTEM,
-) {
+) : CacheMaintenanceStrategy {
     private val mutex = Mutex()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /** 增量跟踪当前缓存总大小，避免每次遍历计算 */
     private var currentSize: Long = 0L
+    override val cacheSpace: Long
+        get() = currentSize
     private var sizeInitialized = false
 
     data class CacheStats(
@@ -236,7 +238,7 @@ class DiskLruCache(
                 count++
             }
         }
-        CacheStats(totalSizeBytes = totalSize, fileCount = count, maxSizeBytes = maxSizeBytes)
+        CacheStats(totalSizeBytes = totalSize, fileCount = count, maxSizeBytes = maxBytes)
     }
 
     /**
@@ -246,6 +248,40 @@ class DiskLruCache(
         fileSystem.deleteRecursively(cacheDir.toOkioPath())
         fileSystem.createDirectories(cacheDir.toOkioPath())
         currentSize = 0L
+    }
+
+    // ==================== CacheMaintenanceStrategy 实现 ====================
+
+    override suspend fun keysSortedByLastAccess(): List<String> = mutex.withLock {
+        fileSystem.list(cacheDir.toOkioPath())
+            .filter { !it.name.endsWith(".tmp") }
+            .map { path ->
+                val key = pathToKey(path)
+                val lastTouch = fileSystem.metadataOrNull(path)?.lastModifiedAtMillis ?: 0L
+                key to lastTouch
+            }
+            .sortedBy { it.second }
+            .map { it.first }
+    }
+
+    override suspend fun resourceLength(key: String): Long = mutex.withLock {
+        val path = keyToPath(key)
+        fileSystem.metadataOrNull(path)?.size ?: 0L
+    }
+
+    override suspend fun removeResource(key: String) {
+        mutex.withLock {
+            val path = keyToPath(key)
+            if (fileSystem.exists(path)) {
+                currentSize -= fileSystem.metadataOrNull(path)?.size ?: 0L
+                fileSystem.delete(path)
+            }
+        }
+    }
+
+    override fun checkAndTrim() {
+        // 委托给 LruCacheMaintenanceStrategy 执行统一的 LRU 清理算法
+        LruCacheMaintenanceStrategy(this).checkAndTrim()
     }
 
     fun release() {
@@ -273,7 +309,7 @@ class DiskLruCache(
      */
     private suspend fun evictIfNeeded() = mutex.withLock {
         if (!sizeInitialized) return@withLock
-        if (currentSize <= maxSizeBytes) return@withLock
+        if (currentSize <= maxBytes) return@withLock
 
         // 在锁内获取文件列表快照并排序
         val files = fileSystem.list(cacheDir.toOkioPath())
@@ -282,7 +318,7 @@ class DiskLruCache(
             .sortedBy { it.second } // 最旧的在前
 
         for ((path, _) in files) {
-            if (currentSize <= maxSizeBytes) break
+            if (currentSize <= maxBytes) break
             currentSize -= fileSystem.metadataOrNull(path)?.size ?: 0L
             fileSystem.delete(path)
         }
@@ -292,7 +328,7 @@ class DiskLruCache(
      * 快速检查并触发淘汰（在 putStream 写入后调用）。
      */
     private suspend fun checkAndEvict() {
-        if (currentSize > maxSizeBytes) {
+        if (currentSize > maxBytes) {
             evictIfNeeded()
         }
     }
@@ -313,6 +349,14 @@ class DiskLruCache(
             .replace("/", "_").replace("?", "_")
             .replace("&", "_").replace("=", "_").replace(":", "_")
         return cacheDir.toOkioPath() / fileName
+    }
+
+    /** 文件名 → URL（[keyToPath] 的逆操作） */
+    private fun pathToKey(path: Path): String {
+        val fileName = path.name
+        // 逆向替换：_ → / 等，但无法完美还原原始 URL，仅用于排序和统计
+        // 这里直接返回文件名作为 key 标识
+        return fileName
     }
 }
 

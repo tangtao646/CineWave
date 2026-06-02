@@ -11,7 +11,6 @@ import androidx.media3.datasource.cache.SimpleCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -26,76 +25,78 @@ import java.io.File
  * - 最大容量：5GB（LRU 淘汰，超出时自动删除最久未访问的切片）
  * - 缓存目录：{cacheDir}/exo_video_cache（与旧 DiskLruCache 目录隔离）
  *
+ * ## 缓存维护
+ * 实现 [CacheMaintenanceStrategy] 接口，通过 [LruCacheMaintenanceStrategy]
+ * 执行统一的 LRU 清理算法（90% 触发 → 清理到 70%）。
+ * 在播放完毕、进入首页、打开新视频等时机调用 [checkAndTrim]。
+ *
  * @param context Application Context
  * @param maxBytes 最大缓存字节数，默认 5GB
  */
 @OptIn(UnstableApi::class)
 class ExoPlayerCache(
     context: Context,
-    private val maxBytes: Long = 5L * 1024 * 1024 * 1024,
-) {
+    override val maxBytes: Long = 5L * 1024 * 1024 * 1024,
+) : CacheMaintenanceStrategy {
+
     companion object {
         private const val TAG = "ExoPlayerCache"
     }
+
+    /** ExoPlayer SimpleCache 实例 */
     val cache: SimpleCache
-    private val cacheScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /** 当前缓存已用字节数，委托给 SimpleCache */
+    override val cacheSpace: Long
+        get() = cache.cacheSpace
+
+    private val maintenanceStrategy = LruCacheMaintenanceStrategy(this)
 
     init {
         val cacheDir = File(context.cacheDir, "exo_video_cache")
         val evictor = LeastRecentlyUsedCacheEvictor(maxBytes)
-        // 使用 StandaloneDatabaseProvider 作为 SimpleCache 的数据库提供者
         val databaseProvider: DatabaseProvider = StandaloneDatabaseProvider(context)
         cache = SimpleCache(cacheDir, evictor, databaseProvider)
     }
 
+    // ==================== CacheMaintenanceStrategy 实现 ====================
+
     /**
-     * 核心检测与主动清理函数
-     * 建议在：1. 每次视频播放完毕 2. 或进入 app 首页时 3. 或 open 新视频时 异步调用。
+     * 按最后访问时间升序排列的缓存 key 列表。
+     * 最久未访问的 key 排在最前面。
      */
-    fun checkAndTrimCache() {
-        cacheScope.launch {
-            try {
-                val currentBytes = cache.cacheSpace
-                val triggerThreshold = (maxBytes * 0.90).toLong() // 90% 触发线
-                val targetBytes = (maxBytes * 0.70).toLong()    // 清理到 70% 停止（留出1.5GB空白）
+    override suspend fun keysSortedByLastAccess(): List<String> {
+        return cache.keys.mapNotNull { key ->
+            val cachedSpans = cache.getCachedSpans(key)
+            val lastTouch = cachedSpans.maxOfOrNull { it.lastTouchTimestamp } ?: 0L
+            if (lastTouch > 0L) key to lastTouch else null
+        }.sortedBy { it.second }.map { it.first }
+    }
 
-                val currentMB = currentBytes / (1024 * 1024)
-                val triggerMB = triggerThreshold / (1024 * 1024)
+    /**
+     * 指定 key 占用的缓存字节数。
+     */
+    override suspend fun resourceLength(key: String): Long {
+        return cache.getCachedSpans(key).sumOf { it.length }
+    }
 
-                PlatformLogger.d(TAG, "缓存状态检查: 当前 ${currentMB}MB / 触发线 ${triggerMB}MB")
+    /**
+     * 从缓存中移除指定 key 的资源。
+     */
+    override suspend fun removeResource(key: String) {
+        cache.removeResource(key)
+    }
 
-                if (currentBytes >= triggerThreshold) {
-                    PlatformLogger.w(TAG, "⚠️ 缓存已达到 90% 临界点，启动后台大缓存清理...")
-
-                    // 获取当前所有缓存资源的 key，并按最后访问时间升序排序（最久未访问的在前）
-                    val sortedKeys = cache.keys.mapNotNull { key ->
-                        val cachedSpans = cache.getCachedSpans(key)
-                        val lastTouch = cachedSpans.maxOfOrNull { it.lastTouchTimestamp } ?: 0L
-                        if (lastTouch > 0L) key to lastTouch else null
-                    }.sortedBy { it.second } // 按时间从小到大排序
-
-                    var bytesToFree = cache.cacheSpace - targetBytes
-                    val freedMBBefore = (cache.cacheSpace / (1024 * 1024))
-
-                    // 开始循环删除最旧的资源，直到降至 70% 水位线
-                    for ((key, _) in sortedKeys) {
-                        if (bytesToFree <= 0) break
-
-                        // 计算该 key 占用的空间，防止删错
-                        val resourceLength = cache.getCachedSpans(key).sumOf { it.length }
-
-                        // 从 SimpleCache 中彻底移除该视频资源
-                        cache.removeResource(key)
-                        bytesToFree -= resourceLength
-                    }
-
-                    val freedMBAfter = (cache.cacheSpace / (1024 * 1024))
-                    PlatformLogger.i(TAG, "✅ 后台清理完成！缓存已从 ${freedMBBefore}MB 降至 ${freedMBAfter}MB，已释放大片连续写入空间。")
-                }
-            } catch (e: Exception) {
-                PlatformLogger.e(TAG, "主动清理缓存时发生异常: ${e.message}", e)
-            }
-        }
+    /**
+     * 执行缓存检查与主动清理。
+     *
+     * 委托给 [LruCacheMaintenanceStrategy] 执行统一的 LRU 清理算法：
+     * 1. 检查当前缓存是否达到 90% 触发线
+     * 2. 如果是，按最后访问时间升序排列所有 key
+     * 3. 从最久未访问的开始删除，直到降至 70% 水位线
+     */
+    override fun checkAndTrim() {
+        maintenanceStrategy.checkAndTrim()
     }
 
     /**

@@ -1,8 +1,10 @@
 package com.example.kmp_demo.di
 
+import com.example.kmp_demo.core.player.cache.CacheMaintenanceStrategy
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
 import com.example.kmp_demo.core.player.cache.CacheProxyServerJvm
 import com.example.kmp_demo.core.player.cache.DiskLruCache
+import com.example.kmp_demo.core.player.cache.LruCacheMaintenanceStrategy
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
@@ -25,6 +27,7 @@ import org.koin.dsl.module
  * 提供 Desktop 上所有平台相关依赖的实现：
  * - 磁盘缓存
  * - M3U8 缓存拦截器
+ * - 缓存维护策略
  */
 actual val platformModule: Module = module {
 
@@ -32,6 +35,12 @@ actual val platformModule: Module = module {
     single<DiskLruCache> {
         val cacheDir = "${System.getProperty("user.home")}/.cinewave/video_cache"
         DiskLruCache(cacheDir = cacheDir)
+    }
+
+    // === Cache Maintenance Strategy ===
+    // 统一的 LRU 缓存维护策略，在播放完毕、进入首页等时机调用 checkAndTrim()
+    single<CacheMaintenanceStrategy> {
+        LruCacheMaintenanceStrategy(delegate = get<DiskLruCache>())
     }
 
     // === Cache Proxy Server (Netty) ===
@@ -62,8 +71,6 @@ actual val platformModule: Module = module {
         )
     }
 
-
-
     // 2. 播放器控制器必须是 factory，因为每次进入播放页都需要一个新的 MediaPlayer 实例。
     // 旧的实例会在 PlatformVideoPlayerScreen 退出时被 release() 销毁。
     // fullscreenController 由平台适配器通过 parametersOf() 传入
@@ -71,10 +78,10 @@ actual val platformModule: Module = module {
         DesktopVideoPlayerController(
             mediaPlayerFactory = get(),
             proxyServer = get(),
+            cacheMaintenance = get<CacheMaintenanceStrategy>(),
             fullscreenController = params.getOrNull(),
         )
     }
-
 
     // === Radio Player Controller (VLCJ) ===
     single<IRadioPlayerController> {
