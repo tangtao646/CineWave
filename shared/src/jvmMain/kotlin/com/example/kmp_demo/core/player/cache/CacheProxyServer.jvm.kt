@@ -55,6 +55,7 @@ import okio.Sink
 class CacheProxyServerJvm(
     private val diskCache: DiskLruCache,
     private val httpClient: HttpClient,
+    private val m3u8Sanitizer: M3u8Sanitizer,
 ) : CacheProxyServer {
     companion object {
         /** 固定代理端口，选用 19876 避开常见端口冲突 */
@@ -75,7 +76,7 @@ class CacheProxyServerJvm(
     override val stats: StateFlow<CacheStats>
         get() = statsCollector.stats
 
-    private val m3u8Handler = lazy { M3u8RequestHandler(httpClient, diskCache) }
+    private val m3u8Handler = lazy { M3u8RequestHandler(httpClient, diskCache, m3u8Sanitizer) }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -234,8 +235,9 @@ class CacheProxyServerJvm(
  *
  * 职责：
  * 1. 从 CDN 拉取原始 M3U8
- * 2. 解析并替换所有切片 URL 为本地代理 URL
- * 3. 后台预取前几个切片（真正的有效预加载）
+ * 2. 广告切片过滤（通过 [M3u8Sanitizer] 移除脏切片）
+ * 3. 解析并替换所有切片 URL 为本地代理 URL
+ * 4. 后台预取前几个切片（真正的有效预加载）
  *
  * ⚠️ 重要：proxyPort 通过函数参数传入，而非构造函数捕获，
  * 避免因 lazy 初始化时端口尚未分配导致捕获到 -1。
@@ -243,6 +245,7 @@ class CacheProxyServerJvm(
 class M3u8RequestHandler(
     private val httpClient: HttpClient,
     private val diskCache: DiskLruCache,
+    private val m3u8Sanitizer: M3u8Sanitizer,
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -274,11 +277,20 @@ class M3u8RequestHandler(
         // 2. 验证 M3U8 内容有效性
         validateM3u8Content(rawContent, originalUrl)
 
-        // 3. 解析并替换 URL
-        val modifiedContent = replaceSegmentUrls(rawContent, originalUrl, headers, proxyPort)
+        // 3. 广告切片过滤：移除脏切片及其 #EXTINF 标签
+        val adCount = m3u8Sanitizer.countAdSegments(rawContent, originalUrl)
+        val cleanContent = if (adCount > 0) {
+            PlatformLogger.d("M3u8RequestHandler", "sanitize() removed $adCount ad segments from $originalUrl")
+            m3u8Sanitizer.sanitize(rawContent, originalUrl)
+        } else {
+            rawContent
+        }
 
-        // 4. 后台预取前 3 个切片（播放器几乎一定会请求前几个切片）
-        val segments = parseSegmentUrls(rawContent, originalUrl)
+        // 4. 解析并替换 URL（在干净的内容上操作）
+        val modifiedContent = replaceSegmentUrls(cleanContent, originalUrl, headers, proxyPort)
+
+        // 5. 后台预取前 3 个切片（只预取干净的切片）
+        val segments = parseSegmentUrls(cleanContent, originalUrl)
         if (segments.isNotEmpty()) {
             scope.launch {
                 segments.take(3).forEach { url ->

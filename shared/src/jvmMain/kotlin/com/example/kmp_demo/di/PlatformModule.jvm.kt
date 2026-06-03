@@ -1,22 +1,21 @@
 package com.example.kmp_demo.di
 
+import com.example.kmp_demo.core.player.cache.AdSegmentFilter
 import com.example.kmp_demo.core.player.cache.CacheMaintenanceStrategy
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
 import com.example.kmp_demo.core.player.cache.CacheProxyServerJvm
+import com.example.kmp_demo.core.player.cache.DefaultAdSegmentFilter
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.LruCacheMaintenanceStrategy
+import com.example.kmp_demo.core.player.cache.M3u8Sanitizer
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
-import com.example.kmp_demo.core.player.domain.FullscreenController
-import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
+import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
 import com.example.kmp_demo.features.radio.domain.player.IRadioPlayerController
 import com.example.kmp_demo.features.radio.player.DesktopRadioPlayerController
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import org.koin.core.module.Module
 import org.koin.dsl.module
+import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 
 /**
  * Desktop (JVM) 平台特定的 Koin 模块
@@ -43,11 +42,24 @@ actual val platformModule: Module = module {
         LruCacheMaintenanceStrategy(delegate = get<DiskLruCache>())
     }
 
+    // === Ad Segment Filter ===
+    // 广告切片过滤器，用于在 M3U8 代理中过滤脏切片广告
+    single<AdSegmentFilter> {
+        DefaultAdSegmentFilter()
+    }
+
+    // === M3U8 Sanitizer ===
+    // M3U8 播放列表清洗器，移除广告切片及其 #EXTINF 标签
+    single<M3u8Sanitizer> {
+        M3u8Sanitizer(adSegmentFilter = get())
+    }
+
     // === Cache Proxy Server (Netty) ===
     single<CacheProxyServer> {
         CacheProxyServerJvm(
             diskCache = get(),
             httpClient = get(),
+            m3u8Sanitizer = get(),
         )
     }
 
