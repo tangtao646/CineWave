@@ -16,21 +16,21 @@ import java.io.InputStream
 /**
  * 广告过滤数据源工厂。
  *
- * 包装 ExoPlayer 的 [DataSource.Factory]，拦截 M3U8 播放列表请求，
- * 在内存中用 [M3u8Sanitizer] 过滤广告切片，返回干净内容给 ExoPlayer。
+ * 包装 ExoPlayer 的 [DataSource.Factory]，拦截所有请求进行内容嗅探，
+ * 对 M3U8 播放列表在内存中用 [M3u8Sanitizer] 过滤广告切片，返回干净内容给 ExoPlayer。
  *
  * ## 工作原理
  *
  * ```
  * ExoPlayer
  *   └─ HlsMediaSource
- *        └─ CacheDataSource.Factory
- *             └─ AdFilterDataSourceFactory  ← 新增拦截层
+ *        └─ AdFilterDataSourceFactory  ← 拦截层（包装 CacheDataSource.Factory）
+ *             └─ CacheDataSource.Factory
  *                  └─ DefaultHttpDataSource.Factory
  * ```
  *
- * - **M3U8 请求**（`.m3u8` 结尾）：用 Ktor 下载原始内容 → [M3u8Sanitizer] 过滤 → 返回干净内容
- * - **TS 切片请求**（`.ts` 结尾）：直接透传，零开销
+ * - **M3U8 请求**：内容嗅探（首行为 `#EXTM3U`）→ 用 Ktor 下载原始内容 → [M3u8Sanitizer] 过滤 → 返回干净内容
+ * - **TS/MP4/M4S 切片请求**：URL 后缀检测 → 直接透传 upstream，零开销
  * - **二级 M3U8**（`#EXT-X-STREAM-INF` 引用的子 M3U8）：递归拦截，因为子 M3U8 的 URL 也会经过此工厂
  *
  * ## 复用 commonMain 代码
@@ -40,7 +40,7 @@ import java.io.InputStream
  * - [M3u8Sanitizer] 清洗器 — 直接复用
  * - Ktor [HttpClient] — 直接复用
  *
- * @param upstreamFactory 上游数据源工厂（通常是 [DefaultHttpDataSource.Factory]）
+ * @param upstreamFactory 上游数据源工厂（通常是 [CacheDataSource.Factory]）
  * @param m3u8Sanitizer M3U8 清洗器，复用 commonMain 的过滤逻辑
  * @param httpClient Ktor HTTP 客户端，用于下载原始 M3U8 内容
  */
@@ -63,10 +63,16 @@ class AdFilterDataSourceFactory(
 /**
  * 广告过滤数据源。
  *
- * 对 [DataSource] 的包装，拦截 M3U8 请求进行广告过滤。
+ * 对 [DataSource] 的包装，通过内容嗅探识别 M3U8 请求并进行广告过滤。
  *
+ * ## 过滤策略
  *
- * @param upstream 上游数据源（TS 切片透传，M3U8 仅用于获取 URI）
+ * 1. **URL 后缀快速过滤**：`.ts`、`.m4s`、`.mp4` 直接透传 upstream，零开销
+ * 2. **内容嗅探**：其他 URL 用 Ktor 下载文本，检测首行是否为 `#EXTM3U`
+ * 3. **广告过滤**：确认是 M3U8 后，用 [M3u8Sanitizer] 过滤广告切片行
+ * 4. **回退机制**：嗅探/过滤失败时，回退到 upstream 放行，不影响播放
+ *
+ * @param upstream 上游数据源（TS/MP4 切片透传；M3U8 请求在嗅探/过滤失败时回退使用）
  * @param m3u8Sanitizer M3U8 清洗器
  * @param httpClient Ktor HTTP 客户端
  */

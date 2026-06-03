@@ -34,16 +34,18 @@ import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 /**
  * 基于 ExoPlayer (Media3) + SimpleCache 的 Android 原生播放器控制器。
  *
- * ## 缓存架构（原生 CacheDataSource 模式）
+ * ## 缓存 + 广告过滤架构
  *
  * 使用 ExoPlayer 官方推荐的 [CacheDataSource] 方案，完全替代旧的本地 HTTP 代理。
+ * 在缓存层之上叠加 [AdFilterDataSourceFactory] 进行广告过滤。
  *
  * ```
  * ExoPlayer
  *   └─ HlsMediaSource
- *        └─ CacheDataSource.Factory
- *             ├─ 命中：SimpleCache(磁盘) → 直接读取，零网络请求
- *             └─ 未命中：DefaultHttpDataSource → CDN，同时写入 SimpleCache
+ *        └─ AdFilterDataSourceFactory  ← 广告过滤层（内容嗅探 + M3U8 清洗）
+ *             └─ CacheDataSource.Factory
+ *                  ├─ 命中：SimpleCache(磁盘) → 直接读取，零网络请求
+ *                  └─ 未命中：DefaultHttpDataSource → CDN，同时写入 SimpleCache
  * ```
  *
  * ## 优势（对比旧代理方案）
@@ -55,6 +57,9 @@ import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
  *
  * @param context Android 上下文
  * @param exoCache ExoPlayer SimpleCache 实例（应用级单例，由 DI 注入）
+ * @param m3u8Sanitizer M3U8 清洗器，用于过滤广告切片
+ * @param httpClient Ktor HTTP 客户端，用于下载原始 M3U8 内容
+ * @param fullscreenController 全屏控制器（可选）
  */
 @OptIn(UnstableApi::class)
 class ExoPlayerController(
@@ -105,8 +110,8 @@ class ExoPlayerController(
     /**
      * 广告过滤 + 缓存的数据源工厂（ExoPlayer 实际使用的工厂）。
      *
-     * 包装 [cacheDataSourceFactory]，所有请求先经过广告过滤，
-     * 过滤后的干净内容才进入 CacheDataSource 缓存。
+     * 包装 [cacheDataSourceFactory]，所有请求先经过 [AdFilterDataSource] 内容嗅探，
+     * 对 M3U8 播放列表进行广告过滤后，干净内容才进入 [CacheDataSource] 缓存。
      *
      * 数据流：
      * ```
@@ -115,12 +120,11 @@ class ExoPlayerController(
      * ```
      *
      * 为什么 AdFilterDataSource 在 CacheDataSource 外面？
-     * 如果 AdFilterDataSource 在 CacheDataSource 的上游（作为 upstream），
-     * 当 .exo 缓存中已有包含广告切片的脏 M3U8 时，CacheDataSource 会直接返回
-     * 缓存的脏内容，永远不会走到 AdFilterDataSource，导致广告过滤失效。
-     *
-     * 正确的做法：AdFilterDataSource 包装 CacheDataSource，
-     * 所有请求都先经过过滤，过滤后的干净内容才被缓存。
+     * - AdFilterDataSource 通过内容嗅探（首行 #EXTM3U）识别 M3U8 请求，
+     *   用 Ktor 下载原始内容 → M3u8Sanitizer 过滤 → 返回干净 ByteArray。
+     * - 过滤后的干净 M3U8 才进入 CacheDataSource，确保 .exo 缓存中只存干净内容。
+     * - TS/MP4 切片直接透传，不受影响。
+     * - 嗅探/过滤失败时回退到 upstream（CacheDataSource），不影响播放。
      */
     private val adFilterCacheDataSourceFactory = AdFilterDataSourceFactory(
         upstreamFactory = cacheDataSourceFactory,
