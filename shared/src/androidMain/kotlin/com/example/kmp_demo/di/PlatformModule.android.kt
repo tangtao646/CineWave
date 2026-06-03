@@ -6,15 +6,19 @@ import com.example.kmp_demo.core.data.local.room.AndroidAppContext
 import com.example.kmp_demo.core.data.local.room.AppDatabase
 import com.example.kmp_demo.core.data.local.room.getDatabaseBuilder
 import com.example.kmp_demo.core.data.local.room.getRoomDatabase
+import com.example.kmp_demo.core.player.cache.AdSegmentFilter
 import com.example.kmp_demo.core.player.cache.CacheMaintenanceStrategy
+import com.example.kmp_demo.core.player.cache.DefaultAdSegmentFilter
 import com.example.kmp_demo.core.player.cache.DiskLruCache
 import com.example.kmp_demo.core.player.cache.ExoPlayerCache
 import com.example.kmp_demo.core.player.cache.LruCacheMaintenanceStrategy
+import com.example.kmp_demo.core.player.cache.M3u8Sanitizer
 import com.example.kmp_demo.core.player.cache.SegmentCacheTracker
 import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.platform.ExoPlayerController
 import com.example.kmp_demo.core.player.platform.getDefaultCacheDir
+import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,13 +67,27 @@ actual val platformModule: Module = module {
         SegmentCacheTracker(diskCache = get())
     }
 
-    // === Video Player Controller (ExoPlayer + SimpleCache) ===
+    // === Ad Segment Filter ===
+    // 广告切片过滤器，复用 commonMain 的过滤规则
+    single<AdSegmentFilter> {
+        DefaultAdSegmentFilter()
+    }
+
+    // === M3U8 Sanitizer ===
+    // M3U8 播放列表清洗器，复用 commonMain 的过滤逻辑
+    single<M3u8Sanitizer> {
+        M3u8Sanitizer(adSegmentFilter = get())
+    }
+
+    // === Video Player Controller (ExoPlayer + SimpleCache + 广告过滤) ===
     // factory{} 而非 single{}：每次进入播放页创建新实例，退出时 release() 销毁
     // fullscreenController 由平台适配器通过 parametersOf() 传入
     factory<IVideoPlayerController> { params ->
         ExoPlayerController(
             context = AndroidAppContext.context,
             exoCache = get(),
+            m3u8Sanitizer = get(),
+            httpClient = get(),
             fullscreenController = params.getOrNull(),
         )
     }

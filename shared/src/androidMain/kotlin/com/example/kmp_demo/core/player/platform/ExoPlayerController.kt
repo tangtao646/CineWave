@@ -15,17 +15,21 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import com.example.kmp_demo.core.player.cache.AdFilterDataSourceFactory
 import com.example.kmp_demo.core.player.cache.ExoPlayerCache
+import com.example.kmp_demo.core.player.cache.M3u8Sanitizer
 import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.PlayerError
 import com.example.kmp_demo.core.player.domain.PlayerErrorType
 import com.example.kmp_demo.core.player.domain.VideoPlaybackState
+import io.ktor.client.HttpClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import androidx.core.net.toUri
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 
 /**
  * 基于 ExoPlayer (Media3) + SimpleCache 的 Android 原生播放器控制器。
@@ -56,7 +60,9 @@ import androidx.core.net.toUri
 class ExoPlayerController(
     private val context: Context,
     private val exoCache: ExoPlayerCache,
-    private val fullscreenController: FullscreenController? = null
+    private val m3u8Sanitizer: M3u8Sanitizer,
+    private val httpClient: HttpClient,
+    private val fullscreenController: FullscreenController? = null,
 ) : IVideoPlayerController {
 
 
@@ -80,14 +86,33 @@ class ExoPlayerController(
         .setAllowCrossProtocolRedirects(true)
 
     /**
+     * 广告过滤数据源工厂。
+     *
+     * 包装 [httpDataSourceFactory]，拦截 M3U8 请求，
+     * 用 [M3u8Sanitizer] 过滤广告切片后返回干净内容。
+     * TS 切片请求直接透传，零开销。
+     */
+    private val adFilterDataSourceFactory = AdFilterDataSourceFactory(
+        upstreamFactory = httpDataSourceFactory,
+        m3u8Sanitizer = m3u8Sanitizer,
+        httpClient = httpClient,
+    )
+
+    /**
      * 带缓存的数据源工厂（ExoPlayer 实际使用的工厂）。
      *
      * [CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR]：
      * 缓存读取失败时（如磁盘损坏），自动回退到网络，不崩溃。
+     *
+     * 数据流：
+     * ```
+     * ExoPlayer → CacheDataSource → AdFilterDataSource → DefaultHttpDataSource
+     *               (缓存层)           (广告过滤层)          (网络层)
+     * ```
      */
     private val cacheDataSourceFactory = CacheDataSource.Factory()
         .setCache(exoCache.cache)
-        .setUpstreamDataSourceFactory(httpDataSourceFactory)
+        .setUpstreamDataSourceFactory(adFilterDataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     // ==================== ExoPlayer 实例 ====================
@@ -131,7 +156,7 @@ class ExoPlayerController(
 
         // 1. 创建自适应重试并降低网络错误敏感度的 LoadErrorHandlingPolicy
         val customErrorHandlingPolicy =
-            object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
+            object : DefaultLoadErrorHandlingPolicy() {
                 override fun getMinimumLoadableRetryCount(dataType: Int): Int {
                     // 针对 HLS 的媒体切片(DATA_TYPE_MEDIA)，提高容错重试次数，防止直接抛异常卡死
                     return if (dataType == C.DATA_TYPE_MEDIA) 6 else 3
