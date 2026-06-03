@@ -86,34 +86,47 @@ class ExoPlayerController(
         .setAllowCrossProtocolRedirects(true)
 
     /**
-     * 广告过滤数据源工厂。
-     *
-     * 包装 [httpDataSourceFactory]，拦截 M3U8 请求，
-     * 用 [M3u8Sanitizer] 过滤广告切片后返回干净内容。
-     * TS 切片请求直接透传，零开销。
-     */
-    private val adFilterDataSourceFactory = AdFilterDataSourceFactory(
-        upstreamFactory = httpDataSourceFactory,
-        m3u8Sanitizer = m3u8Sanitizer,
-        httpClient = httpClient,
-    )
-
-    /**
-     * 带缓存的数据源工厂（ExoPlayer 实际使用的工厂）。
+     * 带缓存的数据源工厂。
      *
      * [CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR]：
      * 缓存读取失败时（如磁盘损坏），自动回退到网络，不崩溃。
      *
      * 数据流：
      * ```
-     * ExoPlayer → CacheDataSource → AdFilterDataSource → DefaultHttpDataSource
-     *               (缓存层)           (广告过滤层)          (网络层)
+     * ExoPlayer → CacheDataSource → DefaultHttpDataSource
+     *               (缓存层)           (网络层)
      * ```
      */
     private val cacheDataSourceFactory = CacheDataSource.Factory()
         .setCache(exoCache.cache)
-        .setUpstreamDataSourceFactory(adFilterDataSourceFactory)
+        .setUpstreamDataSourceFactory(httpDataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+    /**
+     * 广告过滤 + 缓存的数据源工厂（ExoPlayer 实际使用的工厂）。
+     *
+     * 包装 [cacheDataSourceFactory]，所有请求先经过广告过滤，
+     * 过滤后的干净内容才进入 CacheDataSource 缓存。
+     *
+     * 数据流：
+     * ```
+     * ExoPlayer → AdFilterDataSource → CacheDataSource → DefaultHttpDataSource
+     *               (广告过滤层)          (缓存层)           (网络层)
+     * ```
+     *
+     * 为什么 AdFilterDataSource 在 CacheDataSource 外面？
+     * 如果 AdFilterDataSource 在 CacheDataSource 的上游（作为 upstream），
+     * 当 .exo 缓存中已有包含广告切片的脏 M3U8 时，CacheDataSource 会直接返回
+     * 缓存的脏内容，永远不会走到 AdFilterDataSource，导致广告过滤失效。
+     *
+     * 正确的做法：AdFilterDataSource 包装 CacheDataSource，
+     * 所有请求都先经过过滤，过滤后的干净内容才被缓存。
+     */
+    private val adFilterCacheDataSourceFactory = AdFilterDataSourceFactory(
+        upstreamFactory = cacheDataSourceFactory,
+        m3u8Sanitizer = m3u8Sanitizer,
+        httpClient = httpClient,
+    )
 
     // ==================== ExoPlayer 实例 ====================
 
@@ -252,19 +265,25 @@ class ExoPlayerController(
         exoCache.checkAndTrim()
         _playbackState.value = VideoPlaybackState.BUFFERING
         try {
-            // 如果有自定义请求头，重建上游工厂（SimpleCache 不感知 headers，只透传给上游）
+            // 如果有自定义请求头，重建带广告过滤的工厂
             val factory = if (!headers.isNullOrEmpty()) {
                 val headersFactory = DefaultHttpDataSource.Factory()
                     .setConnectTimeoutMs(8_000)
                     .setReadTimeoutMs(8_000)
                     .setAllowCrossProtocolRedirects(true)
                     .setDefaultRequestProperties(headers)
-                CacheDataSource.Factory()
+                val cacheFactory = CacheDataSource.Factory()
                     .setCache(exoCache.cache)
                     .setUpstreamDataSourceFactory(headersFactory)
                     .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                // 广告过滤包装在缓存外面，确保过滤后的干净内容才被缓存
+                AdFilterDataSourceFactory(
+                    upstreamFactory = cacheFactory,
+                    m3u8Sanitizer = m3u8Sanitizer,
+                    httpClient = httpClient,
+                )
             } else {
-                cacheDataSourceFactory
+                adFilterCacheDataSourceFactory
             }
 
             val mediaSource = HlsMediaSource.Factory(factory)

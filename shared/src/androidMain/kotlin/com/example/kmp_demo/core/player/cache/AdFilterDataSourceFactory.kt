@@ -13,7 +13,7 @@ import io.ktor.client.statement.bodyAsText
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 
-/** 注意：似乎是ExoPlayer缓存的数据以.exo结尾导致Android侧广告过滤不起作用，待之后有应对之策再说
+/**
  * 广告过滤数据源工厂。
  *
  * 包装 ExoPlayer 的 [DataSource.Factory]，拦截 M3U8 播放列表请求，
