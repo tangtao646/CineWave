@@ -1,5 +1,7 @@
 package com.example.kmp_demo.core.player.cache
 
+import com.example.kmp_demo.core.PlatformLogger
+
 /**
  * 基于特征规则的广告切片默认过滤器。
  *
@@ -53,30 +55,42 @@ class DefaultAdSegmentFilter(
     override fun isAdSegment(line: String, m3u8BaseUrl: String): Boolean {
         val trimmed = line.trim()
 
-        // 只检测 .ts 切片 URL
+        // 1. 严格守门：只检测包含 .ts 的行
         if (!trimmed.contains(".ts", ignoreCase = true)) return false
-
-        // 只检测 HTTP(S) URL（忽略相对路径、注释等）
-        if (!trimmed.startsWith("http://", ignoreCase = true) &&
-            !trimmed.startsWith("https://", ignoreCase = true)) return false
 
         val lower = trimmed.lowercase()
 
-        // 策略 1：关键词黑名单检测
+        // ==================== 【第一层：新型缝合怪硬核拦截】 ====================
+        // 不管是绝对路径还是相对路径，只要命中强特征词，直接咔嚓
+        if (lower.contains("adjump") || lower.contains("jump") || lower.contains("ad_jump")) {
+            return true
+        }
+
+
+
+        // ==================== 【第二层：全局关键词扫描】 ====================
+        // 基础黑名单继续发力（不论是否带 http 头）
         if (adKeywords.any { keyword -> lower.contains(keyword) }) {
             return true
         }
 
-        // 策略 2：域名跨源检测
-        val m3u8Domain = extractDomain(m3u8BaseUrl)
-        val segmentDomain = extractDomain(trimmed)
-        if (m3u8Domain != null && segmentDomain != null && segmentDomain != m3u8Domain) {
-            return true
-        }
+        // ==================== 【第三层：绝对路径的高级域名清洗】 ====================
+        // 只有当切片是完整的 http(s) 绝对路径时，原先的域名检测和正则才有效
+        if (trimmed.startsWith("http://", ignoreCase = true) ||
+            trimmed.startsWith("https://", ignoreCase = true)
+        ) {
 
-        // 策略 3：广告域名模式匹配
-        if (adDomainPatterns.any { pattern -> pattern.matches(trimmed) }) {
-            return true
+            // 策略 A：域名跨源检测（防外链广告插播）
+            val m3u8Domain = extractDomain(m3u8BaseUrl)
+            val segmentDomain = extractDomain(trimmed)
+            if (m3u8Domain != null && segmentDomain != null && segmentDomain != m3u8Domain) {
+                return true
+            }
+
+            // 策略 B：原有的全套广告域名正则（保留你写的大杀器）
+            if (adDomainPatterns.any { pattern -> pattern.matches(trimmed) }) {
+                return true
+            }
         }
 
         return false
