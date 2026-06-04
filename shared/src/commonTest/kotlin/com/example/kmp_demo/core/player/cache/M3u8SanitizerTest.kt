@@ -5,6 +5,55 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+
+/**
+ * 表示 M3U8 中一个被 DISCONTINUITY 包裹的区间。
+ *
+ * @param startLine 区间起始行号（包含）
+ * @param endLine 区间结束行号（不包含，指向 DISCONTINUITY 标签行）
+ * @param totalDuration 区间内所有切片的总时长（秒）
+ * @param segmentCount 区间内切片数量
+ */
+data class DiscontinuityZone(
+    val startLine: Int,
+    val endLine: Int,
+    val totalDuration: Double,
+    val segmentCount: Int,
+) {
+    /**
+     * 判断该区间是否可能是广告。
+     *
+     * 广告特征：
+     * - 总时长在 2~31 秒之间（短于正常章节）
+     * - 切片数在 2~6 个之间（多个短切片，而非单个切片抖动）
+     * - 平均切片时长 ≤ 8 秒（广告切片通常为 5 秒，正片切片通常为 10 秒）
+     *
+     * 要求 segmentCount >= 2 是为了避免将 DISCONTINUITY 之间
+     * 的单个正片切片误判为广告。
+     */
+    val isLikelyAd: Boolean
+        get() = totalDuration in MIN_AD_DURATION..MAX_AD_DURATION
+                && segmentCount in MIN_AD_SEGMENT_COUNT..MAX_AD_SEGMENT_COUNT
+                && averageSegmentDuration <= MAX_AVERAGE_SEGMENT_DURATION
+
+    /** 区间内切片的平均时长（秒） */
+    val averageSegmentDuration: Double
+        get() = if (segmentCount > 0) totalDuration / segmentCount else 0.0
+
+    companion object {
+        /** 广告最小总时长（秒）：低于此值可能是单个切片抖动 */
+        private const val MIN_AD_DURATION = 2.0
+        /** 广告最大总时长（秒）：超过此值可能是正常内容 */
+        private const val MAX_AD_DURATION = 31.0
+        /** 广告最小切片数：低于此值可能是 DISCONTINUITY 间的单个正片切片 */
+        private const val MIN_AD_SEGMENT_COUNT = 2
+        /** 广告最大切片数：超过此值可能是正常内容 */
+        private const val MAX_AD_SEGMENT_COUNT = 6
+        /** 广告平均切片时长上限（秒）：广告切片通常较短（≤8秒），正片切片通常为10秒 */
+        private const val MAX_AVERAGE_SEGMENT_DURATION = 8.0
+    }
+}
+
 /**
  * [M3u8Sanitizer] 的单元测试。
  *
@@ -18,8 +67,8 @@ import kotlin.test.assertTrue
  *
  * ## 协议状态机测试（新增）
  *
- * - 片头广告区间（DISCONTINUITY 前短区间）→ 整段切除
- * - 片中插播广告区间（DISCONTINUITY 包裹的短区间）→ 切除
+ * - 片头广告区间（DISCONTINUITY 前短区间）→ 整段切除，保留 DISCONTINUITY
+ * - 片中插播广告区间（DISCONTINUITY 包裹的短区间）→ 切除，保留 DISCONTINUITY
  * - 正常长 DISCONTINUITY 区间（>31s）→ 保留，零误杀
  * - 多重广告区间 → 全部切除
  * - 无 DISCONTINUITY 的 M3U8 → 回退特征规则层
@@ -260,7 +309,9 @@ class M3u8SanitizerTest {
         assertFalse(result.contains("ad_001.ts"))
         assertFalse(result.contains("ad_002.ts"))
         assertFalse(result.contains("ad_003.ts"))
-        assertFalse(result.contains("#EXT-X-DISCONTINUITY"))
+        // DISCONTINUITY 标签被保留，让播放器（特别是 VLCJ）知道时间轴发生了跳变，
+        // 从而在快进/快退时能正确校准时间位置
+        assertTrue(result.contains("#EXT-X-DISCONTINUITY"))
         assertTrue(result.contains("real_001.ts"))
     }
 
@@ -289,6 +340,8 @@ class M3u8SanitizerTest {
         assertTrue(result.contains("real_002.ts"))
         assertTrue(result.contains("real_003.ts"))
         assertFalse(result.contains("ad_001.ts"))
+        // 两个 DISCONTINUITY 标签都应保留
+        assertTrue(result.contains("#EXT-X-DISCONTINUITY"))
     }
 
     // ==================== 协议状态机：正常长区间（零误杀） ====================
@@ -352,6 +405,8 @@ class M3u8SanitizerTest {
         assertFalse(result.contains("ad_002.ts"))
         assertTrue(result.contains("real_001.ts"))
         assertTrue(result.contains("real_002.ts"))
+        // 所有 DISCONTINUITY 标签都应保留
+        assertTrue(result.contains("#EXT-X-DISCONTINUITY"))
     }
 
     // ==================== 协议状态机：无 DISCONTINUITY 回退特征规则层 ====================

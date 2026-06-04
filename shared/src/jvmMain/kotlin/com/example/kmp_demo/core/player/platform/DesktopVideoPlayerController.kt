@@ -33,7 +33,8 @@ import java.nio.ByteBuffer
  * 1. 修复了 VLC 底层 playing() 触发过早导致 BUFFERING 被提前覆盖的问题。
  * 2. 建立了状态自愈防抖，收敛了 open/seek/buffering 对状态的竞争。
  */
-class DesktopVideoPlayerController(
+class DesktopVideoPlayerController
+    (
     private val mediaPlayerFactory: MediaPlayerFactory,
     private val proxyServer: CacheProxyServer? = null,
     private val cacheMaintenance: CacheMaintenanceStrategy? = null,
@@ -43,12 +44,14 @@ class DesktopVideoPlayerController(
 
     companion object {
         private const val POSITION_POLL_INTERVAL_MS = 250L
+
         /**
          * seek 后等待 VLC buffering 事件的超时时间。
          * 如果在此时间内 VLC 没有触发 buffering 事件（说明数据已缓存，seek 瞬间完成），
          * 则自动将状态恢复为 PLAYING。
          */
-        private const val SEEK_BUFFER_TIMEOUT_MS = 500L
+        private const val SEEK_BUFFER_TIMEOUT_MS = 600L
+
         /**
          * 打开媒体后的缓冲超时时间（毫秒）。
          * 如果在此时间内 VLC 没有成功播放（即 buffering 未达到 100%），
@@ -61,7 +64,8 @@ class DesktopVideoPlayerController(
     // ==================== VLCJ 核心组件 ====================
 
     /** VLCJ 嵌入式媒体播放器 */
-    val mediaPlayer: EmbeddedMediaPlayer = mediaPlayerFactory.mediaPlayers().newEmbeddedMediaPlayer()
+    val mediaPlayer: EmbeddedMediaPlayer =
+        mediaPlayerFactory.mediaPlayers().newEmbeddedMediaPlayer()
 
     /** 视频帧状态流，供 Compose UI 订阅并渲染 */
     private val _videoFrame = MutableStateFlow<ImageBitmap?>(null)
@@ -77,6 +81,10 @@ class DesktopVideoPlayerController(
     /** 标记 Seek 缓冲是否已被接管 */
     private var seekBufferingTriggered = false
 
+    private var isUserSeeking = false
+    private var lastTargetSeekTimeMs = 0L
+    private var seekTimeoutJob: Job? = null
+
     init {
         // 配置回调视频表面
         val videoSurface = CallbackVideoSurface(
@@ -89,23 +97,15 @@ class DesktopVideoPlayerController(
 
         // 注册优化后的 VLCJ 事件监听器
         mediaPlayer.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
-            override fun mediaChanged(mediaPlayer: MediaPlayer,media: MediaRef) {
-                // 如果已经处于 ERROR 状态，忽略 mediaChanged 事件
-                if (_playbackState.value == VideoPlaybackState.ERROR) {
-                    return
-                }
+            override fun mediaChanged(mediaPlayer: MediaPlayer, media: MediaRef) {
+                if (_playbackState.value == VideoPlaybackState.ERROR) return
                 isVlcPlayingReady = false
                 _playbackState.value = VideoPlaybackState.BUFFERING
             }
 
             override fun playing(mediaPlayer: MediaPlayer) {
-                // 如果已经处于 ERROR 状态，忽略 playing 事件
-                // VLCJ 在无效链接上重试时可能会误触发 playing 事件
-                if (_playbackState.value == VideoPlaybackState.ERROR) {
-                    return
-                }
+                if (_playbackState.value == VideoPlaybackState.ERROR) return
                 isVlcPlayingReady = true
-                // 只有当进度缓冲拉满，或者确认不在发生卡顿阻断时，才切换为 PLAYING
                 if (_bufferedPercent.value >= 100 || mediaPlayer.status().isPlaying) {
                     _playbackState.value = VideoPlaybackState.PLAYING
                 }
@@ -140,26 +140,26 @@ class DesktopVideoPlayerController(
                 stopPositionPolling()
             }
 
+            // ==================== 方案二优化点 ====================
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) {
-                // 如果已经处于 ERROR 状态，忽略后续 buffering 事件
-                // 防止 VLCJ 在无效链接上无限重试时覆盖超时检测设置的 ERROR 状态
-                if (_playbackState.value == VideoPlaybackState.ERROR) {
+                if (_playbackState.value == VideoPlaybackState.ERROR) return
+
+                seekBufferingTriggered = true
+                val percent = newCache.toInt().coerceIn(0, 100)
+
+                // 【优化】如果当前正处于稳定的 PLAYING 状态，
+                // 过滤掉由于广告拦截/丢包重试导致的底层瞬间 0% 抖动，防止 Loading 圈闪烁
+                if (percent == 0 && _playbackState.value == VideoPlaybackState.PLAYING) {
                     return
                 }
 
-                seekBufferingTriggered = true
-
-                // 将 0.0 ~ 1.0 归一化为 0 ~ 100 的整数进度
-                val percent = newCache.toInt().coerceIn(0, 100)
                 _bufferedPercent.value = percent
 
                 if (percent < 100) {
-                    // 只要未缓冲完，且当前不是 BUFFERING，则立即展出 Loading 圈
                     if (_playbackState.value != VideoPlaybackState.BUFFERING) {
                         _playbackState.value = VideoPlaybackState.BUFFERING
                     }
                 } else {
-                    // 缓冲达到 100，结合底层核心就绪状态，安全恢复 PLAYING
                     if (isVlcPlayingReady || mediaPlayer.status().isPlaying) {
                         _playbackState.value = VideoPlaybackState.PLAYING
                     }
@@ -264,12 +264,21 @@ class DesktopVideoPlayerController(
     // ==================== Seek 缓冲处理 ====================
 
     private fun performSeek(targetTimeMs: Long) {
+        // 1. 每次引发新的 Seek 之前，必须取消上一次的超时检测任务，防止多流并发或连续快进导致的 Job 冲突
+        seekTimeoutJob?.cancel()
+
         seekBufferingTriggered = false
         _playbackState.value = VideoPlaybackState.BUFFERING
+
+        // 2. 核心吸附：让逻辑位置流在 Seek 的瞬间立即强制变成目标时间
+        // 这样即使底层发生字节漂移，UI 的进度条也会死死吸附在用户松手的位置，不会向后倒退或乱跳
+        _currentPosition.value = targetTimeMs
+
+        // 3. 将请求发给 VLC 底层引擎
         mediaPlayer.controls().setTime(targetTimeMs)
 
-        // 启动超时边界阀：如果 VLC 没有抛出 buffering 变更，说明直接命中了本地代理缓存，瞬间完成跳转
-        scope.launch {
+        // 4. 启动超时边界阀
+        seekTimeoutJob = scope.launch {
             delay(SEEK_BUFFER_TIMEOUT_MS)
             if (!seekBufferingTriggered && _playbackState.value == VideoPlaybackState.BUFFERING) {
                 if (mediaPlayer.status().isPlaying || isVlcPlayingReady) {
@@ -306,7 +315,10 @@ class DesktopVideoPlayerController(
             delay(OPEN_BUFFER_TIMEOUT_MS)
             val currentState = _playbackState.value
             if (currentState == VideoPlaybackState.BUFFERING) {
-                PlatformLogger.d("DesktopVideoPlayerController", "open() timeout after ${OPEN_BUFFER_TIMEOUT_MS}ms, transitioning to ERROR")
+                PlatformLogger.d(
+                    "DesktopVideoPlayerController",
+                    "open() timeout after ${OPEN_BUFFER_TIMEOUT_MS}ms, transitioning to ERROR"
+                )
                 _playbackState.value = VideoPlaybackState.ERROR
                 _playerError.value = PlayerError(
                     type = PlayerErrorType.TIMEOUT,
@@ -336,24 +348,26 @@ class DesktopVideoPlayerController(
     }
 
     override suspend fun seekTo(positionMs: Long) {
-        performSeek(positionMs)
+        val safePosition = positionMs.coerceIn(0L, _duration.value)
+        performSeek(safePosition)
     }
 
     override suspend fun seekForward(seconds: Long) {
-        val currentTime = mediaPlayer.status().time()
-        performSeek(currentTime + seconds * 1000)
+        // 【优化】快进时，基于我们自己维护的逻辑时间轴计算目标位置，不要从漂移的底层 time() 拿数据
+        val targetTime = (_currentPosition.value + seconds * 1000).coerceIn(0L, _duration.value)
+        performSeek(targetTime)
     }
 
     override suspend fun seekBackward(seconds: Long) {
-        val currentTime = mediaPlayer.status().time()
-        performSeek((currentTime - seconds * 1000).coerceAtLeast(0L))
+        // 【优化】快退同理
+        val targetTime = (_currentPosition.value - seconds * 1000).coerceIn(0L, _duration.value)
+        performSeek(targetTime)
     }
 
     override suspend fun setVolume(volume: Float) {
         _volume.value = volume.coerceIn(0f, 1f)
         mediaPlayer.audio().setVolume((_volume.value * 100).toInt())
     }
-
 
 
     override suspend fun setFullscreen(isFullScreen: Boolean) {
@@ -372,7 +386,8 @@ class DesktopVideoPlayerController(
         runBlocking(NonCancellable) {
             try {
                 proxyServer?.stop()
-            } catch (_: Exception) { }
+            } catch (_: Exception) {
+            }
         }
 
         scope.cancel()
@@ -383,7 +398,8 @@ class DesktopVideoPlayerController(
                 if (mediaPlayer.status().isPlaying) {
                     mediaPlayer.controls().stop()
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
 
             try {
                 Thread.sleep(100)
@@ -393,7 +409,8 @@ class DesktopVideoPlayerController(
 
             try {
                 mediaPlayer.release()
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }.apply {
             isDaemon = true
             name = "vlc-release-thread"

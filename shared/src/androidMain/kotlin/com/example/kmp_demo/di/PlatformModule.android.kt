@@ -6,6 +6,7 @@ import com.example.kmp_demo.core.data.local.room.AndroidAppContext
 import com.example.kmp_demo.core.data.local.room.AppDatabase
 import com.example.kmp_demo.core.data.local.room.getDatabaseBuilder
 import com.example.kmp_demo.core.data.local.room.getRoomDatabase
+import com.example.kmp_demo.core.player.cache.AdCleanStrategy
 import com.example.kmp_demo.core.player.cache.AdSegmentFilter
 import com.example.kmp_demo.core.player.cache.CacheMaintenanceStrategy
 import com.example.kmp_demo.core.player.cache.DefaultAdSegmentFilter
@@ -76,7 +77,10 @@ actual val platformModule: Module = module {
     // === M3U8 Sanitizer ===
     // M3U8 播放列表清洗器，复用 commonMain 的过滤逻辑
     single<M3u8Sanitizer> {
-        M3u8Sanitizer(adSegmentFilter = get())
+        M3u8Sanitizer(
+            adSegmentFilter = get(),
+            cleanStrategy = AdCleanStrategy.REPLACE_WITH_GAP
+        )
     }
 
     // === Video Player Controller (ExoPlayer + SimpleCache + 广告过滤) ===

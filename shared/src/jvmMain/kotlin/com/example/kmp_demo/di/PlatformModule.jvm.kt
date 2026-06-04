@@ -1,5 +1,6 @@
 package com.example.kmp_demo.di
 
+import com.example.kmp_demo.core.player.cache.AdCleanStrategy
 import com.example.kmp_demo.core.player.cache.AdSegmentFilter
 import com.example.kmp_demo.core.player.cache.CacheMaintenanceStrategy
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
@@ -51,7 +52,10 @@ actual val platformModule: Module = module {
     // === M3U8 Sanitizer ===
     // M3U8 播放列表清洗器，移除广告切片及其 #EXTINF 标签
     single<M3u8Sanitizer> {
-        M3u8Sanitizer(adSegmentFilter = get())
+        M3u8Sanitizer(
+            adSegmentFilter = get(),
+            cleanStrategy = AdCleanStrategy.DROP_COMPLETELY
+        )
     }
 
     // === Cache Proxy Server (Netty) ===
@@ -80,6 +84,19 @@ actual val platformModule: Module = module {
             "--no-video-title-show",
             "--quiet",
             "--no-snapshot-preview",
+            // 🌟 解决时间戳紊乱/音视频不同步的真正合法参数
+            "--audio-desync=10000",      // 允许音频和视频时间戳最大有 10 秒的漂移而不触发强制死锁/重置
+            "--cr-average=80",           // 增大时钟参考信号(PCR)的平均权重窗口（默认40），平滑恶劣流的时间戳跳变
+
+            // 🌟 针对 HLS (M3U8) 的专项抗抖动优化
+            "--adaptive-logic=highest",  // 或者是 "bandwidth", "nearoptimal"。强制指定 HLS 自适应逻辑
+
+            // 🌟 缓存与网络防卡顿
+            "--network-caching=1500",    // 网络缓存拉到 1.5 秒。1 秒有时在切片丢失时太极限，1.5 秒更稳健
+            "--live-caching=1500",       // 如果是直播/动态 M3U8 流，同步控制直播缓存
+
+            // 🌟 强行容错了解复用器（Demuxer）
+            "--demux=adaptive,any"       // 现代 VLC 负责 HLS/DASH 的模块叫 adaptive，而不是单纯的 hls
         )
     }
 

@@ -192,7 +192,7 @@ class ExoPlayerController(
             // 使用 adFilterCacheDataSourceFactory 确保所有 M3U8 请求经过广告过滤
             .setMediaSourceFactory(
                 HlsMediaSource.Factory(adFilterCacheDataSourceFactory)
-                    .setAllowChunklessPreparation(false) // 关闭 Chunkless Preparation，确保广告过滤层生效
+                    .setAllowChunklessPreparation(false) // 开启 Chunkless Preparation，让 ExoPlayer 精确计算时间轴，确保快进/快退定位准确
                     .setLoadErrorHandlingPolicy(customErrorHandlingPolicy)
             )
             .setLoadControl(loadControl)
