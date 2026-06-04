@@ -188,10 +188,11 @@ class ExoPlayerController(
                     .build(),
                 /* handleAudioFocus = */ true
             )
-            // 注入带缓存的 HLS 媒体源工厂
+            // 注入带广告过滤 + 缓存的 HLS 媒体源工厂
+            // 使用 adFilterCacheDataSourceFactory 确保所有 M3U8 请求经过广告过滤
             .setMediaSourceFactory(
-                HlsMediaSource.Factory(cacheDataSourceFactory)
-                    .setAllowChunklessPreparation(true)
+                HlsMediaSource.Factory(adFilterCacheDataSourceFactory)
+                    .setAllowChunklessPreparation(false) // 关闭 Chunkless Preparation，确保广告过滤层生效
                     .setLoadErrorHandlingPolicy(customErrorHandlingPolicy)
             )
             .setLoadControl(loadControl)

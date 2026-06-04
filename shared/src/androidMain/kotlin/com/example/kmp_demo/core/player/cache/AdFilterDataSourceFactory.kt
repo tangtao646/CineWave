@@ -1,6 +1,7 @@
 package com.example.kmp_demo.core.player.cache
 
 import android.net.Uri
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
@@ -68,9 +69,9 @@ class AdFilterDataSourceFactory(
  * ## 过滤策略
  *
  * 1. **URL 后缀快速过滤**：`.ts`、`.m4s`、`.mp4` 直接透传 upstream，零开销
- * 2. **内容嗅探**：其他 URL 用 Ktor 下载文本，检测首行是否为 `#EXTM3U`
+ * 2. **广谱嗅探**：无 `.ts/.m4s/.mp4` 后缀的 URL 都进入嗅探通道，不限于 `.m3u8` 后缀
  * 3. **广告过滤**：确认是 M3U8 后，用 [M3u8Sanitizer] 过滤广告切片行
- * 4. **回退机制**：嗅探/过滤失败时，回退到 upstream 放行，不影响播放
+ * 4. **带重试的容错机制**：嗅探/过滤失败时，连续失败 N 次后才回退放行，避免脏数据进缓存
  *
  * @param upstream 上游数据源（TS/MP4 切片透传；M3U8 请求在嗅探/过滤失败时回退使用）
  * @param m3u8Sanitizer M3U8 清洗器
@@ -83,61 +84,110 @@ class AdFilterDataSource(
     private val httpClient: HttpClient,
 ) : DataSource {
 
+    companion object {
+        private const val TAG = "AdFilterDataSource"
+        /** 最大连续失败次数：超过此值才回退放行，防止脏数据进缓存 */
+        private const val MAX_CONSECUTIVE_FAILURES = 3
+    }
+
     private var currentUri: Uri? = null
     private var filteredStream: InputStream? = null
-    private var isRealM3u8 = false // 动态标记
+    private var isM3u8Confirmed = false
+    private var consecutiveFailures = 0
 
     override fun open(dataSpec: DataSpec): Long {
         currentUri = dataSpec.uri
         val url = dataSpec.uri.toString()
+        isM3u8Confirmed = false
 
-        // 1. 如果是明显的二进制媒体数据块（ts / m4s / mp4），直接透传给 upstream，绝对不拦截
-        if (url.contains(".ts") || url.contains(".m4s") || url.contains(".mp4")) {
-            isRealM3u8 = false
-            return upstream.open(dataSpec)
+        // 广谱嗅探：无 .ts/.m4s/.mp4 后缀的 URL 都进入嗅探通道
+        if (shouldSniff(url)) {
+            return openWithSniff(url, dataSpec)
         }
 
-        // 2. 任何不带明显媒体后缀的 API 链接，或者是 .m3u8，一律视为潜存的 M3U8 文本进行嗅探
+        // 明显的二进制媒体数据块，直接透传
+        return upstream.open(dataSpec)
+    }
+
+    /**
+     * 判断是否需要对该 URL 进行内容嗅探。
+     *
+     * 广谱策略：不限于 `.m3u8` 后缀，只要不是已知的媒体切片后缀就进行嗅探。
+     * 这能捕获那些 URL 伪装成非标准路径的 M3U8 请求。
+     */
+    private fun shouldSniff(url: String): Boolean {
+        val lower = url.lowercase()
+        return !lower.contains(".ts") &&
+               !lower.contains(".m4s") &&
+               !lower.contains(".mp4")
+    }
+
+    /**
+     * 打开 URL 并进行内容嗅探和广告过滤。
+     *
+     * 带重试机制的容错处理：
+     * - 连续失败 [MAX_CONSECUTIVE_FAILURES] 次后才回退放行
+     * - 失败次数不足时抛异常触发 ExoPlayer 重试
+     * - 宁可抛异常触发重试，也不放行未经验证的内容
+     */
+    private fun openWithSniff(url: String, dataSpec: DataSpec): Long {
         return try {
             // 用 Ktor 下载网络文本
             val rawContent = kotlinx.coroutines.runBlocking {
                 httpClient.get(url).bodyAsText()
             }
 
-            // 核心嗅探：不管你 URL 怎么伪装，只要文本第一行是 #EXTM3U，你就是 M3U8！
-            if (rawContent.startsWith("#EXTM3U")) {
-                isRealM3u8 = true
-
-                // 喂给你的 commonMain 清洗器
-                val adCount = m3u8Sanitizer.countAdSegments(rawContent, url)
-                val cleanContent = if (adCount > 0) {
-                    m3u8Sanitizer.sanitize(rawContent, url)
-                } else {
-                    rawContent
-                }
-
-                val bytes = cleanContent.toByteArray(Charsets.UTF_8)
-                filteredStream = ByteArrayInputStream(bytes)
-                bytes.size.toLong()
-            } else {
-                // 嗅探完发现不是 M3U8 文本（可能是黑产加了密的非标二级数据，或伪装的ts），交回给原生
-                isRealM3u8 = false
-                upstream.open(dataSpec)
+            // 核心嗅探：首行是 #EXTM3U 才确认是 M3U8
+            if (!rawContent.trimStart().startsWith("#EXTM3U")) {
+                // 嗅探完发现不是 M3U8 文本，透传
+                isM3u8Confirmed = false
+                consecutiveFailures = 0
+                return upstream.open(dataSpec)
             }
+
+            // 确认是 M3U8，重置失败计数
+            isM3u8Confirmed = true
+            consecutiveFailures = 0
+
+            // 用 M3u8Sanitizer 过滤广告
+            val adCount = m3u8Sanitizer.countAdSegments(rawContent, url)
+            val cleanContent = if (adCount > 0) {
+                Log.d(TAG, "广告过滤: 移除了 $adCount 个广告区间, url=$url")
+                m3u8Sanitizer.sanitize(rawContent, url)
+            } else {
+                rawContent
+            }
+
+            val bytes = cleanContent.toByteArray(Charsets.UTF_8)
+            filteredStream = ByteArrayInputStream(bytes)
+            bytes.size.toLong()
         } catch (e: Exception) {
-            android.util.Log.e("AdFilterDataSource", "嗅探/过滤失败，回退原生放行: $url", e)
-            isRealM3u8 = false
-            upstream.open(dataSpec)
+            consecutiveFailures++
+            Log.e(TAG, "嗅探/过滤失败 ($consecutiveFailures/$MAX_CONSECUTIVE_FAILURES): $url", e)
+
+            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                // 连续失败 N 次后回退放行，避免播放卡死
+                Log.w(TAG, "连续失败 $consecutiveFailures 次，回退原生放行: $url")
+                isM3u8Confirmed = false
+                upstream.open(dataSpec)
+            } else {
+                // 失败次数不足，抛异常触发 ExoPlayer 重试
+                throw java.io.IOException(
+                    "M3U8 Filter temporary failure ($consecutiveFailures/$MAX_CONSECUTIVE_FAILURES), will retry",
+                    e,
+                )
+            }
         }
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-        if (isRealM3u8) { // 严格跟着动态标记走
+        if (isM3u8Confirmed) {
             val stream = filteredStream
             if (stream != null) {
                 val bytesRead = stream.read(buffer, offset, length)
                 return if (bytesRead == -1) C.RESULT_END_OF_INPUT else bytesRead
             }
+            return C.RESULT_END_OF_INPUT
         }
         return upstream.read(buffer, offset, length)
     }
@@ -147,7 +197,8 @@ class AdFilterDataSource(
     override fun close() {
         filteredStream?.close()
         filteredStream = null
-        isRealM3u8 = false
+        isM3u8Confirmed = false
+        consecutiveFailures = 0
         upstream.close()
     }
 
