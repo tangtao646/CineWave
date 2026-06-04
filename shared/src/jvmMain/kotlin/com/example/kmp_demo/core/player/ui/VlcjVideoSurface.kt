@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
 
@@ -33,7 +34,8 @@ fun VlcjVideoSurface(
     controller: DesktopVideoPlayerController,
     modifier: Modifier = Modifier,
 ) {
-    val videoFrame by controller.videoFrame.collectAsState()
+    // 订阅外壳 wrapper 状态
+    val frameWrapper by controller.videoFrame.collectAsState()
 
     Box(
         modifier = modifier
@@ -41,9 +43,10 @@ fun VlcjVideoSurface(
             .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
-        videoFrame?.let { frame ->
+        frameWrapper?.let { wrapper ->
+            // wrapper 每次都是新实例，Compose 收到通知后会立刻在此处重绘像素画面
             Image(
-                bitmap = frame,
+                bitmap = wrapper.texture.toComposeImageBitmap(),
                 contentDescription = "Video Stream",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit

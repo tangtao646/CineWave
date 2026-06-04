@@ -58,17 +58,18 @@ class M3u8Sanitizer(
         val structure = parseM3u8Structure(rawContent)
         val result = mutableListOf<String>()
 
-        // 1. 无论如何，最优先无缝填入全局头部标头，保证 M3U8 语法绝对合法
+        // 1. 优先填入全局头部标头
         result.addAll(structure.globalHeaders)
 
         val blocks = structure.blocks
         var validBlockProcessedCount = 0
+        var pendingDiscontinuity = false
 
         for (block in blocks) {
             if (block.isAdBlock) {
-                // ========== 命中广告区间块 ==========
+                // ========== 命中广告大区间块 ==========
                 if (cleanStrategy == AdCleanStrategy.REPLACE_WITH_GAP) {
-                    // 【Android 策略】：广告块整体退化为 GAP 占位，并严格对齐断层标记
+                    // 【Android 策略】：保持大块完整，使用不连续标签和 GAP 占位
                     if (block.hasLeadingDiscontinuity && result.size > structure.globalHeaders.size) {
                         result.add("#EXT-X-DISCONTINUITY")
                     }
@@ -76,28 +77,55 @@ class M3u8Sanitizer(
                         segment.infLine?.let { result.add(it) }
                         result.add("#EXT-X-GAP")
                     }
+                } else {
+                    // 【Desktop 策略】：直接丢弃整个广告大块
+                    // 告知状态机接下来的正片大块开头需要感知到有广告被切了
+                    pendingDiscontinuity = true
                 }
-                // DROP_COMPLETELY 模式下直接 continue 蒸发
                 continue
             }
 
-            // ========== 健康的正片区间 ==========
+            // ========== 健康的正片大块区间 ==========
             if (block.segments.isEmpty()) continue
             validBlockProcessedCount++
 
-            // 只有当这不是第一个正片块，且前序有断层意图时，才补入唯一的 #EXT-X-DISCONTINUITY
-            if (block.hasLeadingDiscontinuity && validBlockProcessedCount > 1 && result.size > structure.globalHeaders.size) {
-                result.add("#EXT-X-DISCONTINUITY")
+            // 计算正片大块开头是否需要补不连续标记
+            val needDiscontinuity = if (cleanStrategy == AdCleanStrategy.DROP_COMPLETELY) {
+                // 桌面端策略：无情隐瞒由丢广告产生的断层(pendingDiscontinuity=true时返回false)。
+                // 只有流自带、且我们没动过它的原生多视角不连续标记才允许保留。
+                block.hasLeadingDiscontinuity && !pendingDiscontinuity && validBlockProcessedCount > 1
+            } else {
+                // Android 策略：如果是原生自带断层，或者前面刚丢过广告大块（虽Android不丢大块，这里留作状态闭环），正常补齐
+                (block.hasLeadingDiscontinuity || pendingDiscontinuity) &&
+                        validBlockProcessedCount > 1 &&
+                        result.size > structure.globalHeaders.size
             }
 
-            // 写入正片块切片
+            if (needDiscontinuity && result.size > structure.globalHeaders.size) {
+                if (!result.last().trim().startsWith("#EXT-X-DISCONTINUITY")) {
+                    result.add("#EXT-X-DISCONTINUITY")
+                }
+                // 消费掉信号
+                pendingDiscontinuity = false
+            } else if (cleanStrategy == AdCleanStrategy.DROP_COMPLETELY) {
+                // 🌟 核心对齐：桌面端如果因为截断广告产生了 pendingDiscontinuity 信号，
+                // 在跨过 block 开头后，必须在这里将其安全消费并重置，完成桌面端状态自愈
+                pendingDiscontinuity = false
+            }
+
+            // 写入正片块中的具体切片（瘦身版：彻底拿掉切片级死代码）
             block.segments.forEach { segment ->
-                if (adSegmentFilter.isAdSegment(segment.urlLine, m3u8BaseUrl)) {
+                val isAd = adSegmentFilter.isAdSegment(segment.urlLine, m3u8BaseUrl)
+
+                if (isAd) {
+                    // 遇到零散的独立广告切片
                     if (cleanStrategy == AdCleanStrategy.REPLACE_WITH_GAP) {
                         segment.infLine?.let { result.add(it) }
                         result.add("#EXT-X-GAP")
                     }
+                    // 桌面端（DROP_COMPLETELY）直接忽略，不写入 result
                 } else {
+                    // 遇到真正的正片切片，无论哪个平台，直接顺次写入
                     result.addAll(segment.extraLines)
                     segment.infLine?.let { result.add(it) }
                     result.add(segment.urlLine)
@@ -111,7 +139,6 @@ class M3u8Sanitizer(
             result.removeAt(result.lastIndex)
         }
 
-        // 补回 HLS 要求的末尾闭合标签（如果有的话）
         if (rawContent.contains("#EXT-X-ENDLIST") && !result.contains("#EXT-X-ENDLIST")) {
             result.add("#EXT-X-ENDLIST")
         }

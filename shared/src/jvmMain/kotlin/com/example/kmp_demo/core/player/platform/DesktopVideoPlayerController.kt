@@ -1,19 +1,26 @@
 package com.example.kmp_demo.core.player.platform
 
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.toComposeImageBitmap
+import com.example.kmp_demo.core.PlatformLogger
 import com.example.kmp_demo.core.player.cache.CacheMaintenanceStrategy
 import com.example.kmp_demo.core.player.cache.CacheProxyServer
-import com.example.kmp_demo.core.PlatformLogger
 import com.example.kmp_demo.core.player.domain.FullscreenController
 import com.example.kmp_demo.core.player.domain.IVideoPlayerController
 import com.example.kmp_demo.core.player.domain.PlayerError
 import com.example.kmp_demo.core.player.domain.PlayerErrorType
 import com.example.kmp_demo.core.player.domain.VideoPlaybackState
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.media.MediaRef
 import uk.co.caprica.vlcj.player.base.MediaPlayer
@@ -26,6 +33,14 @@ import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallback
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.format.RV32BufferFormat
 import java.awt.image.BufferedImage
 import java.nio.ByteBuffer
+
+/**
+ * 视频帧包装体：保留长寿对象的指针，利用时间戳穿透 Flow 判定机制
+ */
+data class VideoFrameWrapper(
+    val texture: BufferedImage,
+    val frameId: Long // 每一帧都递增，确保 Flow 无法拦截去重
+)
 
 /**
  * Desktop 视频播放器 — 基于 VLCJ (libvlc) 的 CallbackVideoSurface 渲染。
@@ -68,8 +83,12 @@ class DesktopVideoPlayerController
         mediaPlayerFactory.mediaPlayers().newEmbeddedMediaPlayer()
 
     /** 视频帧状态流，供 Compose UI 订阅并渲染 */
-    private val _videoFrame = MutableStateFlow<ImageBitmap?>(null)
-    val videoFrame: StateFlow<ImageBitmap?> = _videoFrame.asStateFlow()
+    // 🌟 1. 将泛型更改为我们的 Wrapper
+    private val _videoFrame = MutableStateFlow<VideoFrameWrapper?>(null)
+    val videoFrame: StateFlow<VideoFrameWrapper?> = _videoFrame.asStateFlow()
+
+    // 🌟 2. 引入一个全局帧计数器
+    private var globalFrameCounter = 0L
 
     /** 临时缓存 BufferedImage，用于像素转换 */
     @Volatile
@@ -81,8 +100,6 @@ class DesktopVideoPlayerController
     /** 标记 Seek 缓冲是否已被接管 */
     private var seekBufferingTriggered = false
 
-    private var isUserSeeking = false
-    private var lastTargetSeekTimeMs = 0L
     private var seekTimeoutJob: Job? = null
 
     init {
@@ -200,10 +217,13 @@ class DesktopVideoPlayerController
             val img = bufferedImage ?: return
             val buffer = nativeBuffers[0]
 
+            // 零拷贝：将 C 语言内存数据直接泵入预分配的 BufferedImage 中
             val pixelData = (img.raster.dataBuffer as java.awt.image.DataBufferInt).data
             buffer.asIntBuffer().get(pixelData)
 
-            _videoFrame.value = img.toComposeImageBitmap()
+            // 🌟 3. 核心药方：每次产生一个新的外壳实例，携带递增的 ID
+            // 实例本身只有十几字节，对 JVM 来说毫无 GC 压力，但成功让 Flow 认识到“值变了”！
+            _videoFrame.value = VideoFrameWrapper(img, ++globalFrameCounter)
         }
     }
 
@@ -303,7 +323,14 @@ class DesktopVideoPlayerController
         _playerError.value = null  // 清除之前的错误
 
         PlatformLogger.d("DesktopVideoPlayerController", "Playing URL: $url")
-        mediaPlayer.media().play(url)
+        val mediaOptions = arrayOf(
+            ":network-caching=2000",
+            ":live-caching=2000",
+            ":audio-desync=15000",      // 🌟 极重要：允许音视频 PTS 跳变 15 秒不掐断流
+            ":cr-average=100",          // 🌟 极重要：通过大滑动窗口平滑时钟跳变
+            ":adaptive-logic=highest"
+        )
+        mediaPlayer.media().play(url, *mediaOptions)
         PlatformLogger.d("DesktopVideoPlayerController", "mediaPlayer.media().play() returned")
 
         // ========== 缓冲超时检测 ==========

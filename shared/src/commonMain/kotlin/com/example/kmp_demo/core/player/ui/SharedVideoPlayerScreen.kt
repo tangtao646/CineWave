@@ -109,12 +109,7 @@ fun SharedVideoPlayerScreen(
                     )
                 }
         ) {
-            // 中央播放/暂停按钮（带缓冲指示）
-            CenterPlayButton(
-                state = uiState,
-                onClick = { handlePlayerAction(manager, PlayerAction.TogglePlayPause) },
-                modifier = Modifier.align(Alignment.Center)
-            )
+
 
             // 底部控制栏（带动画）
             AnimatedVisibility(
@@ -179,6 +174,13 @@ fun SharedVideoPlayerScreen(
                     )
                 }
             }
+
+            // 中央播放/暂停按钮（带缓冲指示）
+            CenterPlayButton(
+                state = uiState,
+                onClick = { handlePlayerAction(manager, PlayerAction.TogglePlayPause) },
+                modifier = Modifier.align(Alignment.Center)
+            )
 
             // ========== 错误展示层 ==========
             // 当播放状态为 ERROR 时，显示美观的错误提示覆盖层
