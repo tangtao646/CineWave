@@ -5,14 +5,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import com.example.kmp_demo.core.PlatformLogger
 import com.example.kmp_demo.core.player.platform.DesktopVideoPlayerController
+import java.awt.BorderLayout
+import java.awt.Canvas
+import java.awt.Dimension
+import javax.swing.JPanel
+import javax.swing.SwingUtilities
 
 /**
  * VLCJ 视频渲染表面 — 基于 CallbackVideoSurface 的 Compose 原生渲染。

@@ -79,7 +79,7 @@ actual val platformModule: Module = module {
     single<M3u8Sanitizer> {
         M3u8Sanitizer(
             adSegmentFilter = get(),
-            cleanStrategy = AdCleanStrategy.REPLACE_WITH_GAP
+            cleanStrategy = AdCleanStrategy.REPLACE_WITH_GAP,
         )
     }
 

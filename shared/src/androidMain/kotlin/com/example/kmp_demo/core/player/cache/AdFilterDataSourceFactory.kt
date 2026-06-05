@@ -149,11 +149,13 @@ class AdFilterDataSource(
             isM3u8Confirmed = true
             consecutiveFailures = 0
 
-            // 用 M3u8Sanitizer 过滤广告
+            // 用 M3u8Sanitizer 过滤广告（sanitize 为挂起函数）
             val adCount = m3u8Sanitizer.countAdSegments(rawContent, url)
             val cleanContent = if (adCount > 0) {
                 Log.d(TAG, "广告过滤: 移除了 $adCount 个广告区间, url=$url")
-                m3u8Sanitizer.sanitize(rawContent, url)
+                kotlinx.coroutines.runBlocking {
+                    m3u8Sanitizer.sanitize(rawContent, url)
+                }
             } else {
                 rawContent
             }

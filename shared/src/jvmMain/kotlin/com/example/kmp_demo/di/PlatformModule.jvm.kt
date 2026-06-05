@@ -54,7 +54,7 @@ actual val platformModule: Module = module {
     single<M3u8Sanitizer> {
         M3u8Sanitizer(
             adSegmentFilter = get(),
-            cleanStrategy = AdCleanStrategy.DROP_COMPLETELY
+            cleanStrategy = AdCleanStrategy.DROP_COMPLETELY,
         )
     }
 
@@ -84,6 +84,7 @@ actual val platformModule: Module = module {
             "--no-video-title-show",
             "--quiet",
             "--no-snapshot-preview",
+
         )
     }
 

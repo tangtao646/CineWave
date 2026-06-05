@@ -324,11 +324,13 @@ class DesktopVideoPlayerController
 
         PlatformLogger.d("DesktopVideoPlayerController", "Playing URL: $url")
         val mediaOptions = arrayOf(
-            ":network-caching=2000",
-            ":live-caching=2000",
-            ":audio-desync=15000",      // 🌟 极重要：允许音视频 PTS 跳变 15 秒不掐断流
-            ":cr-average=100",          // 🌟 极重要：通过大滑动窗口平滑时钟跳变
-            ":adaptive-logic=highest"
+            // 将网络缓存控制在 1.2 秒，既抗抖动，又保证起播和快进时不会转圈太久
+            ":network-caching=1200",
+            ":live-caching=1200",
+            // 🌟 强力保留：通过大滑动窗口平滑时钟跳变，防范音画分离
+            ":cr-average=120",
+            // 禁用 VLC 自己多余的修正，防止它和我们的 Sanitizer 产生时钟计算冲突
+            ":m3u8-ext-x-start-time=0"
         )
         mediaPlayer.media().play(url, *mediaOptions)
         PlatformLogger.d("DesktopVideoPlayerController", "mediaPlayer.media().play() returned")
