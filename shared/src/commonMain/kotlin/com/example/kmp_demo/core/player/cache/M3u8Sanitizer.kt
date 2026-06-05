@@ -20,123 +20,64 @@ class M3u8Sanitizer(
     private val cleanStrategy: AdCleanStrategy = AdCleanStrategy.DROP_COMPLETELY
 ) {
 
-    /**
-     * 单个媒体切片的平铺结构
-     */
-    private data class MediaSegment(
-        val infLine: String?,
-        val urlLine: String,
-        val extraLines: List<String> = emptyList()
-    )
-
-    /**
-     * 核心无损清洗入口（零网络I/O，微秒级纯文本处理）
-     */
     fun sanitize(rawContent: String, m3u8BaseUrl: String): String {
         val lines = rawContent.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         val result = mutableListOf<String>()
 
-        var hasDroppedAnyAd = false
-        var isFirstValidSegment = true
-
-        var nextSegmentHasDiscontinuity = false
+        // 仅用于追踪当前切片之前的那个 #EXTINF 时长标签
         var activeInfLine: String? = null
-        val activeExtraLines = mutableListOf<String>()
 
         for (line in lines) {
             when {
-                // 1. 全局头部标记直接写入
-                (line.startsWith("#EXTM3U") ||
-                        line.startsWith("#EXT-X-VERSION") ||
-                        line.startsWith("#EXT-X-TARGETDURATION") ||
-                        line.startsWith("#EXT-X-MEDIA-SEQUENCE") ||
-                        line.startsWith("#EXT-X-PLAYLIST-TYPE")) -> {
-                    result.add(line)
-                }
-
-                // 2. 捕获不连续性断层标签
-                line.startsWith("#EXT-X-DISCONTINUITY") -> {
-                    nextSegmentHasDiscontinuity = true
-                }
-
-                // 3. 捕获时长标签
+                // 1. 仅仅拦截时长标签，不立刻写入，暂存起来等待与紧随其后的 TS 链接捆绑审计
                 line.startsWith("#EXTINF:") -> {
                     activeInfLine = line
                 }
 
-                // 4. 捕获其他随带标签
-                line.startsWith("#") -> {
-                    if (!line.startsWith("#EXT-X-ENDLIST") && !line.startsWith("#EXT-X-GAP")) {
-                        activeExtraLines.add(line)
-                    }
-                }
-
-                // 5. 遭遇真实的 TS URL 行（触发核心审计与状态机流式缝合）
-                else -> {
-                    // 🌟 唯一裁决基准：交由 DefaultAdSegmentFilter 的黑名单，不盲猜时间，不探测分辨率
+                // 2. 核心裁决区：遭遇真实的媒体数据切片（非 # 开头的行，或显式包含 .ts）
+                (!line.startsWith("#") || line.contains(".ts", ignoreCase = true)) -> {
+                    // 100% 听从且仅听从 DefaultAdSegmentFilter 的黑名单域名裁决
                     val isAd = adSegmentFilter.isAdSegment(line, m3u8BaseUrl)
 
                     if (isAd) {
-                        // ========= 命中真正的域名黑名单广告 =========
-                        hasDroppedAnyAd = true
-
+                        // 【命中广告】：根据平台差异化抹除或占位
                         if (cleanStrategy == AdCleanStrategy.REPLACE_WITH_GAP) {
-                            // 【Android ExoPlayer 策略】：原地转为 GAP 占位，确保播放器 Timeline 总时长不塌陷
                             activeInfLine?.let { result.add(it) }
                             result.add("#EXT-X-GAP")
                         }
-                        // 【Desktop VLCJ 策略】：直接丢弃，不写入 result，无缝顺延
+                        // DROP_COMPLETELY 策略下，广告时长行和 URL 行直接物理蒸发，代码不写入任何内容
                     } else {
-                        // ========= 命中健康的纯正片切片 =========
-
-                        // 原生断层标签自愈恢复逻辑
-                        if (nextSegmentHasDiscontinuity && !isFirstValidSegment) {
-                            if (cleanStrategy == AdCleanStrategy.DROP_COMPLETELY) {
-                                // 如果紧挨着前面刚刚清洗掉了广告，为了防止 VLC 回放画面闪烁或回滚，
-                                // 我们把这个由广告引发的断层顺带“抹平”；只有当纯原生的正片断层（前面没洗过广告）才予以放行。
-                                if (!hasDroppedAnyAd) {
-                                    ensureDiscontinuityTag(result)
-                                }
-                            } else {
-                                // Android 端无条件信任并保留正片原生断层
-                                ensureDiscontinuityTag(result)
-                            }
-                        }
-
-                        // 写入安全的正片序列
-                        isFirstValidSegment = false
-                        result.addAll(activeExtraLines)
+                        // 【命中正片】：将暂存的时长行（如有）和当前切片完整、安全地写入
                         activeInfLine?.let { result.add(it) }
                         result.add(line)
-
-                        // 重置状态
-                        hasDroppedAnyAd = false
                     }
 
-                    // 消费完毕，消费局部状态重置
-                    nextSegmentHasDiscontinuity = false
+                    // 消费完毕，清空当前切片的依附状态
                     activeInfLine = null
-                    activeExtraLines.clear()
+                }
+
+                // 3. 安全放行阀：所有非切片、非时长的公共标签（VERSION, KEY解密, MAP, DISCONTINUITY等）
+                // 我们不理解、不关心的东西，一律原样直接放行，杜绝任何株连误杀
+                line.startsWith("#") -> {
+                    // 过滤掉原本存在或动态生成的标签，防止双重冲突
+                    if (!line.startsWith("#EXT-X-ENDLIST") && !line.startsWith("#EXT-X-GAP")) {
+                        result.add(line)
+                    }
+                }
+
+                // 4. 兜底文本放行
+                else -> {
+                    result.add(line)
                 }
             }
         }
 
-        // 强力防跳尾保护锁：强制清除末尾由于裁剪可能残存的悬空断层标记
-        while (result.isNotEmpty() && (result.last().startsWith("#EXT-X-DISCONTINUITY") || result.last().isEmpty())) {
-            result.removeAt(result.lastIndex)
-        }
-
+        // 🌟 生产级刚需：全量还原 VOD 视频的点播闭环结束标记，防止 ExoPlayer/VLC 播放到末尾卡死或识别为直播
         if (rawContent.contains("#EXT-X-ENDLIST") && !result.contains("#EXT-X-ENDLIST")) {
             result.add("#EXT-X-ENDLIST")
         }
 
         return result.joinToString("\n")
-    }
-
-    private fun ensureDiscontinuityTag(result: MutableList<String>) {
-        if (result.isNotEmpty() && !result.last().startsWith("#EXT-X-DISCONTINUITY")) {
-            result.add("#EXT-X-DISCONTINUITY")
-        }
     }
 
     /**
