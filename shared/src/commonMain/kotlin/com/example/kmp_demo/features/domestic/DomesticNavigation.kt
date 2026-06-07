@@ -77,10 +77,10 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
             arguments = listOf(navArgument("title") { type = NavType.StringType })
         ) { entry ->
             // 从 NavBackStackEntry 提取 title，通过 parametersOf 传入 ViewModel
-            val args = entry.arguments ?: return@composable
-            val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: return@composable
+            //val args = entry.arguments ?: return@composable
+            //val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: return@composable
             val viewModel: DomesticDetailViewModel = koinViewModel(
-                parameters = { parametersOf(title) }
+//                parameters = { parametersOf(title) }
             )
             DomesticDetailScreen(
                 viewModel = viewModel,

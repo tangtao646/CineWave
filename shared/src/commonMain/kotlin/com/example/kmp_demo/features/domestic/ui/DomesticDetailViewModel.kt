@@ -1,5 +1,6 @@
 package com.example.kmp_demo.features.domestic.ui
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.example.kmp_demo.core.BaseDetailViewModel
 import com.example.kmp_demo.core.IUiEffect
@@ -59,10 +60,13 @@ class DomesticDetailContract {
  */
 class DomesticDetailViewModel(
     private val repository: DomesticRepository,
-    private val mediaTitle: String,
+    private val savedStateHandle: SavedStateHandle
 ) : BaseDetailViewModel<DomesticDetailContract.State, DomesticDetailContract.Intent, DomesticDetailContract.Effect>(
     initialState = DomesticDetailContract.State()
 ) {
+
+    val mediaTitle: String = savedStateHandle.get<String>("title")
+        ?: throw IllegalArgumentException("title is required")
 
     init {
         loadDetail()

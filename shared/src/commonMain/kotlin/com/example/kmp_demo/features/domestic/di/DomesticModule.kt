@@ -47,11 +47,6 @@ val domesticModule = module {
     viewModelOf(::DomesticSearchViewModel)
 
     // DomesticDetailViewModel 需要 mediaTitle 参数，由各平台通过 parametersOf 传入
-    viewModel { params ->
-        DomesticDetailViewModel(
-            repository = get(),
-            mediaTitle = params.get<String>(),
-        )
-    }
+    viewModelOf(::DomesticDetailViewModel)
 
 }
