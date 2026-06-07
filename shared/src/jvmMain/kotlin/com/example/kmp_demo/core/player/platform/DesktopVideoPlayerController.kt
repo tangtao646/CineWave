@@ -94,6 +94,14 @@ class DesktopVideoPlayerController
     @Volatile
     private var bufferedImage: BufferedImage? = null
 
+    // 标志位：是否正在处理 Seek/Skip 过程中
+    @Volatile
+    private var isSeeking = false
+
+    // 🌟 新增：UI 锁定时间戳。只要它不为 null，轮询就不允许覆盖当前的 currentPosition
+    @Volatile
+    private var uiSeekPosition: Long? = null
+
     /** 状态自愈核心锁：VLC 核心引擎是否真正处于就绪且应当播放的状态 */
     private var isVlcPlayingReady = false
 
@@ -123,6 +131,12 @@ class DesktopVideoPlayerController
             override fun playing(mediaPlayer: MediaPlayer) {
                 if (_playbackState.value == VideoPlaybackState.ERROR) return
                 isVlcPlayingReady = true
+
+                // 🌟 如果没有处于缓冲阶段，顺便把 seek 锁释放掉，确保画面动起来的时候控制权交还轮询
+                if (!isSeeking) {
+                    uiSeekPosition = null
+                }
+
                 if (_bufferedPercent.value >= 100 || mediaPlayer.status().isPlaying) {
                     _playbackState.value = VideoPlaybackState.PLAYING
                 }
@@ -158,14 +172,13 @@ class DesktopVideoPlayerController
             }
 
             // ==================== 方案二优化点 ====================
+            // 1. 在 buffering 回调中，如果缓冲完成（100%），说明跳转彻底结束
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) {
                 if (_playbackState.value == VideoPlaybackState.ERROR) return
 
                 seekBufferingTriggered = true
                 val percent = newCache.toInt().coerceIn(0, 100)
 
-                // 【优化】如果当前正处于稳定的 PLAYING 状态，
-                // 过滤掉由于广告拦截/丢包重试导致的底层瞬间 0% 抖动，防止 Loading 圈闪烁
                 if (percent == 0 && _playbackState.value == VideoPlaybackState.PLAYING) {
                     return
                 }
@@ -177,6 +190,9 @@ class DesktopVideoPlayerController
                         _playbackState.value = VideoPlaybackState.BUFFERING
                     }
                 } else {
+                    // 🌟 缓冲达 100%，Seek 结束，释放锁
+                    isSeeking = false
+                    uiSeekPosition = null // 🌟 完美的释放时机！此时底层真实时钟已经追上来了，允许轮询接管
                     if (isVlcPlayingReady || mediaPlayer.status().isPlaying) {
                         _playbackState.value = VideoPlaybackState.PLAYING
                     }
@@ -261,7 +277,8 @@ class DesktopVideoPlayerController
             while (isActive) {
                 val vlcMediaPlayer = mediaPlayer
                 try {
-                    if (vlcMediaPlayer.status().isPlaying) {
+                    // 🌟 核心防御：如果正在 Seeking，或者 UI 锁定值还在，绝对不用底层旧数据污染 UI
+                    if (vlcMediaPlayer.status().isPlaying && !isSeeking && uiSeekPosition == null){
                         _currentPosition.value = vlcMediaPlayer.status().time()
                         val len = vlcMediaPlayer.status().length()
                         if (len > 0) {
@@ -283,24 +300,54 @@ class DesktopVideoPlayerController
 
     // ==================== Seek 缓冲处理 ====================
 
+    // ==================== Seek 实现 ====================
+
+    /** 绝对定位（进度条拖拽） */
     private fun performSeek(targetTimeMs: Long) {
-        // 1. 每次引发新的 Seek 之前，必须取消上一次的超时检测任务，防止多流并发或连续快进导致的 Job 冲突
         seekTimeoutJob?.cancel()
+        isSeeking = true
+
+        // 🌟 锁死 UI 展现值
+        uiSeekPosition = targetTimeMs
+        _currentPosition.value = targetTimeMs
 
         seekBufferingTriggered = false
         _playbackState.value = VideoPlaybackState.BUFFERING
 
-        // 2. 核心吸附：让逻辑位置流在 Seek 的瞬间立即强制变成目标时间
-        // 这样即使底层发生字节漂移，UI 的进度条也会死死吸附在用户松手的位置，不会向后倒退或乱跳
-        _currentPosition.value = targetTimeMs
-
-        // 3. 将请求发给 VLC 底层引擎
+        // 使用绝对时间设置
         mediaPlayer.controls().setTime(targetTimeMs)
+        startSeekTimeout()
+    }
 
-        // 4. 启动超时边界阀
+    /** 相对偏移（快进/快退按钮） */
+    private fun performSkip(deltaMs: Long) {
+        seekTimeoutJob?.cancel()
+        isSeeking = true
+        seekBufferingTriggered = false
+        _playbackState.value = VideoPlaybackState.BUFFERING
+
+        // 🌟 核心改进：基准值优先取用 uiSeekPosition（应对连续狂点的场景），取不到再取当前进度
+        val basePosition = uiSeekPosition ?: _currentPosition.value
+        val targetTarget = (basePosition + deltaMs).coerceIn(0L, _duration.value)
+
+        // 刷新 UI 锁定值
+        uiSeekPosition = targetTarget
+        _currentPosition.value = targetTarget
+
+        // 🌟 强力建议：将相对快进也转换为绝对时间 setTime 执行
+        // 这能有效规避 libvlc 底层相对 skip 时因时钟跳变（Discontinuity）引发的无法预测的时间回弹
+        mediaPlayer.controls().setTime(targetTarget)
+
+        startSeekTimeout()
+    }
+
+    // 超时降级任务中清空锁定
+    private fun startSeekTimeout() {
         seekTimeoutJob = scope.launch {
             delay(SEEK_BUFFER_TIMEOUT_MS)
             if (!seekBufferingTriggered && _playbackState.value == VideoPlaybackState.BUFFERING) {
+                isSeeking = false
+                uiSeekPosition = null // 🌟 超时释放 UI 锁定
                 if (mediaPlayer.status().isPlaying || isVlcPlayingReady) {
                     _playbackState.value = VideoPlaybackState.PLAYING
                 }
@@ -382,15 +429,13 @@ class DesktopVideoPlayerController
     }
 
     override suspend fun seekForward(seconds: Long) {
-        // 【优化】快进时，基于我们自己维护的逻辑时间轴计算目标位置，不要从漂移的底层 time() 拿数据
-        val targetTime = (_currentPosition.value + seconds * 1000).coerceIn(0L, _duration.value)
-        performSeek(targetTime)
+        // 使用 skipTime 相对偏移：不依赖绝对时间→切片映射，
+        // 避免 HLS 流经 M3u8Sanitizer 过滤广告后 setTime/setPosition 在 DISCONTINUITY 边界失效
+        performSkip(seconds * 1000)
     }
 
     override suspend fun seekBackward(seconds: Long) {
-        // 【优化】快退同理
-        val targetTime = (_currentPosition.value - seconds * 1000).coerceIn(0L, _duration.value)
-        performSeek(targetTime)
+        performSkip(-seconds * 1000)
     }
 
     override suspend fun setVolume(volume: Float) {

@@ -78,7 +78,7 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
         ) { entry ->
             // 从 NavBackStackEntry 提取 title，通过 parametersOf 传入 ViewModel
             val args = entry.arguments ?: return@composable
-            val title = NavType.StringType.get(args, "title")?.decodeNavParam() ?: return@composable
+            val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: return@composable
             val viewModel: DomesticDetailViewModel = koinViewModel(
                 parameters = { parametersOf(title) }
             )
