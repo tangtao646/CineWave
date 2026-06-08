@@ -60,13 +60,10 @@ class DomesticDetailContract {
  */
 class DomesticDetailViewModel(
     private val repository: DomesticRepository,
-    private val savedStateHandle: SavedStateHandle
+    val mediaTitle: String
 ) : BaseDetailViewModel<DomesticDetailContract.State, DomesticDetailContract.Intent, DomesticDetailContract.Effect>(
     initialState = DomesticDetailContract.State()
 ) {
-
-    val mediaTitle: String = savedStateHandle.get<String>("title")
-        ?: throw IllegalArgumentException("title is required")
 
     init {
         loadDetail()
