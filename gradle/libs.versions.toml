@@ -46,6 +46,8 @@ lifecycleViewmodelCompose = "2.8.6"
 lifecycleRuntimeCompose = "2.8.6"
 navigationRuntimeDesktop = "2.9.0-beta01"
 vlcj = "4.8.2"
+media3UiComposeMaterial3 = "1.10.1"
+media3UiCompose = "1.10.1"
 
 
 [libraries]
@@ -133,6 +135,8 @@ androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls
 androidx-media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3" }
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3" }
+androidx-media3-ui-compose-material3 = { group = "androidx.media3", name = "media3-ui-compose-material3", version.ref = "media3UiComposeMaterial3" }
+
 
 # Guava (ListenableFuture)
 guava-android = { module = "com.google.guava:guava", version.ref = "guava" }
@@ -145,7 +149,6 @@ kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-s
 # Compose UI Test
 compose-uiTestJunit4 = { module = "org.jetbrains.compose.ui:ui-test-junit4", version.ref = "composeUiTest" }
 compose-uiTest = { group = "org.jetbrains.compose.ui", name = "ui-test", version.ref = "composeUiTest" }
-androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3Ui" }
 
 compose-ui-util = { module = "org.jetbrains.compose.ui:ui-util", version.ref = "composeMultiplatform" }
 

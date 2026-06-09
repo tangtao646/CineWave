@@ -28,7 +28,7 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.datasource.okhttp)
-    implementation(libs.androidx.media3.ui)
+
 
     // Guava (ListenableFuture)
     implementation(libs.guava.android)
