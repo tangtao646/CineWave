@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import androidx.core.net.toUri
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 
 /**
@@ -164,9 +165,9 @@ class ExoPlayerController(
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 30_000, // minBufferMs: 提高最小缓冲到30秒，保证后续播放平滑
-                60_000, // maxBufferMs: 最大缓冲60秒
+                500_000, // maxBufferMs: 最大缓冲500秒
                 2_000,  // bufferForPlaybackMs: 降低到2秒，实现秒开、极速起播
-                5_000   // bufferForPlaybackAfterRebufferMs: 跌入二次缓冲后，攒满5秒就继续播，避免长等待
+                2_000   // bufferForPlaybackAfterRebufferMs: 跌入二次缓冲后，攒满2秒就继续播，避免长等待
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -179,6 +180,15 @@ class ExoPlayerController(
                     return if (dataType == C.DATA_TYPE_MEDIA) 6 else 3
                 }
             }
+
+        //限制分辨率
+        val trackSelector = DefaultTrackSelector(context).apply {
+            setParameters(
+                buildUponParameters()
+                    .setMinVideoSize(1920, 1080) //最低高清
+                    .setForceHighestSupportedBitrate(true) //强制限制最高码率
+            )
+        }
 
         player = ExoPlayer.Builder(context)
             .setAudioAttributes(
@@ -195,6 +205,7 @@ class ExoPlayerController(
                     .setAllowChunklessPreparation(false) // 开启 Chunkless Preparation，让 ExoPlayer 精确计算时间轴，确保快进/快退定位准确
                     .setLoadErrorHandlingPolicy(customErrorHandlingPolicy)
             )
+            .setTrackSelector(trackSelector)
             .setLoadControl(loadControl)
             .setHandleAudioBecomingNoisy(true)
             .build()
