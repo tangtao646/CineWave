@@ -29,3 +29,11 @@ fun createHttpClient(): HttpClient {
         }
     }
 }
+
+fun HttpRequestBuilder.userAgent() {
+    userAgent("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36")
+}
+
+fun commonHeaders() {
+    headersOf("Cache-Control", "no-cache")
+}

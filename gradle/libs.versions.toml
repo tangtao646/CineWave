@@ -32,7 +32,6 @@ composeMediaPlayer = "0.10.0"
 coilNetworkKtor3 = "3.2.0"
 composeUiTest = "1.8.2"
 okio = "3.9.0"
-media3Ui = "1.5.1"
 kotlinx-coroutines = "1.11.0"
 
 navigationCommonAndroid = "2.9.0"
@@ -44,10 +43,8 @@ compose-multiplatform-lifecycle = "2.11.0-beta01"
 
 lifecycleViewmodelCompose = "2.8.6"
 lifecycleRuntimeCompose = "2.8.6"
-navigationRuntimeDesktop = "2.9.0-beta01"
 vlcj = "4.8.2"
 media3UiComposeMaterial3 = "1.10.1"
-media3UiCompose = "1.10.1"
 
 
 [libraries]

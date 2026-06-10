@@ -1,5 +1,7 @@
 package com.example.kmp_demo.features.domestic.data.remote
 
+import com.example.kmp_demo.core.network.commonHeaders
+import com.example.kmp_demo.core.network.userAgent
 import com.example.kmp_demo.core.videosource.VideoSourceSite
 import com.example.kmp_demo.core.videosource.VideoSourceSiteConfigProvider
 import com.example.kmp_demo.core.videosource.VideoSourceSiteLoader
@@ -33,6 +35,9 @@ class DomesticApi(
     companion object {
         private val TARGET_SITE_KEYS = setOf("ffzy", "bfzy", "lzi", "dbzy", "dyttzy")
     }
+
+
+
     /**
      * 发现所有活跃站点中可用的分类（type_name → 各站点的 type_id 映射）。
      *
@@ -51,6 +56,8 @@ class DomesticApi(
                     parameter("pg", 1)
                     parameter("h", 24)
                     parameter("out", "json")
+                    commonHeaders()
+                    userAgent()
                 }.bodyAsText()
                 val response = json.decodeFromString<DomesticListResponse>(body)
                 response.list?.forEach { item ->
@@ -62,6 +69,7 @@ class DomesticApi(
         }
         return allTypeNames.toList().sorted()
     }
+
 
     /**
      * 获取最近更新的影视列表（含封面图），支持按分类筛选。
@@ -113,6 +121,8 @@ class DomesticApi(
             parameter("pg", page)
             parameter("h", hours)
             parameter("out", "json")
+            commonHeaders()
+            userAgent()
             // 如果指定了分类，先发现该站点对应的 type_id
             if (typeName != null) {
                 val typeId = resolveTypeIdForSite(site, typeName)
@@ -132,6 +142,8 @@ class DomesticApi(
             parameter("ac", "detail")
             parameter("ids", batchIds)
             parameter("out", "json")
+            commonHeaders()
+            userAgent()
         }.bodyAsText()
         val detailResponse = json.decodeFromString<DomesticDetailResponse>(detailBody)
 
@@ -149,6 +161,8 @@ class DomesticApi(
                 parameter("pg", 1)
                 parameter("h", 24)
                 parameter("out", "json")
+                commonHeaders()
+                userAgent()
             }.bodyAsText()
             val response = json.decodeFromString<DomesticListResponse>(body)
             response.list
@@ -178,6 +192,8 @@ class DomesticApi(
                     parameter("wd", keyword)
                     parameter("pg", page)
                     parameter("out", "json")
+                    commonHeaders()
+                    userAgent()
                 }.bodyAsText()
                 val response = json.decodeFromString<DomesticDetailResponse>(body)
                 response.list?.let { allItems.addAll(it) }
@@ -187,6 +203,7 @@ class DomesticApi(
         }
         return deduplicate(allItems)
     }
+
 
     /**
      * 搜索结果，包含匹配的条目和来源站点的 base URL。
@@ -220,11 +237,13 @@ class DomesticApi(
                     parameter("wd", keyword)
                     parameter("pg", 1)
                     parameter("out", "json")
+                    commonHeaders()
+                    userAgent()
                 }.bodyAsText()
                 val response = json.decodeFromString<DomesticDetailResponse>(body)
                 val match = response.list?.firstOrNull { item ->
                     item.name.contains(keyword, ignoreCase = true) ||
-                        keyword.contains(item.name, ignoreCase = true)
+                            keyword.contains(item.name, ignoreCase = true)
                 }
                 if (match != null) {
                     // 从 site.api 提取 base URL（去掉路径部分）
