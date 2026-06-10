@@ -29,6 +29,7 @@ class DomesticDetailContract {
     ) : IUiState
 
     sealed class Intent : IUiIntent {
+        data class Init(val title: String) : Intent()
         data object Retry : Intent()
     }
 
@@ -65,23 +66,33 @@ class DomesticDetailViewModel(
     initialState = DomesticDetailContract.State()
 ) {
 
-    init {
-        loadDetail()
-    }
+    private var currentMediaTitle: String = mediaTitle
 
     override fun sendIntent(intent: DomesticDetailContract.Intent) {
         when (intent) {
-            DomesticDetailContract.Intent.Retry -> loadDetail()
+            is DomesticDetailContract.Intent.Init -> handleInit(intent.title)
+            DomesticDetailContract.Intent.Retry -> loadDetail(currentMediaTitle)
         }
     }
 
-    private fun loadDetail() {
+    private fun handleInit(targetTitle: String) {
+        //  核心防御：如果切进来的 title 已经在展示了，并且已经有内容，直接复用，不重复请求
+        if (currentMediaTitle == targetTitle && currentState.pageStatus is PageStatus.Content) {
+            return
+        }
+
+        // 说明切换了不同的 item (或者强杀重建后重新激活)
+        currentMediaTitle = targetTitle
+        loadDetail(targetTitle)
+    }
+
+    private fun loadDetail(title: String) {
         viewModelScope.launch {
             updateState { copy(pageStatus = PageStatus.Loading) }
-            repository.getDetailMeta(mediaTitle)
+            repository.getDetailMeta(title)
                 .onSuccess { meta ->
                     updateState { copy(pageStatus = PageStatus.Content, media = meta) }
-                    sniffVideoSources()
+                    sniffVideoSources(title)
                 }
                 .onFailure { error ->
                     updateState {
@@ -91,10 +102,10 @@ class DomesticDetailViewModel(
         }
     }
 
-    private fun sniffVideoSources() {
+    private fun sniffVideoSources(title: String) {
         viewModelScope.launch {
             updateState { copy(isSniffing = true) }
-            val sources = repository.getDetailSources(mediaTitle)
+            val sources = repository.getDetailSources(title)
             updateState { copy(videoSources = sources, isSniffing = false) }
         }
     }
@@ -103,7 +114,7 @@ class DomesticDetailViewModel(
         preparePlayback(
             source = source,
             videoSources = currentState.videoSources,
-            title = currentState.media?.title ?: mediaTitle,
+            title = currentState.media?.title ?: currentMediaTitle,
             navigateEffect = { url, title, episodes ->
                 DomesticDetailContract.Effect.NavigateToPlayer(url, title, episodes)
             },

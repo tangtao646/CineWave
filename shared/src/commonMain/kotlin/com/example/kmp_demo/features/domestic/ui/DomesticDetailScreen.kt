@@ -50,12 +50,17 @@ import org.koin.compose.viewmodel.koinViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DomesticDetailScreen(
+    title: String,
     onBack: () -> Unit,
     onPlay: (url: String, title: String, episodes: List<EpisodeInfo>) -> Unit,
     viewModel: DomesticDetailViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(title) {
+        viewModel.sendIntent(DomesticDetailContract.Intent.Init(title))
+    }
 
     LaunchedEffect(Unit) {
         viewModel.uiEffect.collect { effect ->

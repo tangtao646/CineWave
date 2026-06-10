@@ -24,6 +24,7 @@ class FilmDetailContract {
     ) : IUiState
 
     sealed class Intent : IUiIntent {
+        data class Init(val movieId: Int) : Intent()
         data object Retry : Intent()
         data object SniffSources : Intent()
         data class PlayVideo(val source: VideoSource) : Intent()
@@ -35,6 +36,7 @@ class FilmDetailContract {
             val title: String,
             val episodes: List<EpisodeInfo> = emptyList(),
         ) : Effect()
+
         data class ShowToast(val message: String) : Effect()
     }
 }
@@ -54,16 +56,26 @@ class FilmDetailViewModel(
     initialState = FilmDetailContract.State()
 ) {
 
-    init {
-        loadMovieDetail()
-    }
+    private var currentMovieId: Int = movieId
 
     override fun sendIntent(intent: FilmDetailContract.Intent) {
         when (intent) {
-            FilmDetailContract.Intent.Retry -> loadMovieDetail()
+            is FilmDetailContract.Intent.Init -> handleInit(intent.movieId)
+            FilmDetailContract.Intent.Retry -> loadMovieDetail(currentMovieId)
             FilmDetailContract.Intent.SniffSources -> sniffVideoSources()
             is FilmDetailContract.Intent.PlayVideo -> handlePlay(intent.source)
         }
+    }
+
+    private fun handleInit(targetMovieId: Int) {
+        //  核心防御：如果切进来的 title 已经在展示了，并且已经有内容，直接复用，不重复请求
+        if (currentMovieId == targetMovieId && currentState.pageStatus is PageStatus.Content) {
+            return
+        }
+
+        // 说明切换了不同的 item (或者强杀重建后重新激活)
+        currentMovieId = targetMovieId
+        loadMovieDetail(targetMovieId)
     }
 
     private fun handlePlay(source: VideoSource) {
@@ -80,7 +92,7 @@ class FilmDetailViewModel(
         )
     }
 
-    private fun loadMovieDetail() {
+    private fun loadMovieDetail(movieId: Int) {
         viewModelScope.launch {
             updateState { copy(pageStatus = PageStatus.Loading) }
             repository.getMovieDetail(movieId)

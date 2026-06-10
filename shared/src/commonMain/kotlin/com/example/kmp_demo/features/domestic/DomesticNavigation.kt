@@ -80,13 +80,15 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
             val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: return@composable
 
             //  绑定到整个 graph 作用域
-            val graphEntry = remember(entry) { navController.getBackStackEntry(DomesticRoutes.graph) }
+            val graphEntry =
+                remember(entry) { navController.getBackStackEntry(DomesticRoutes.graph) }
             // 首次创建，通过 parametersOf 把 title 喂给 Koin 闭包
             val viewModel: DomesticDetailViewModel = koinViewModel(
                 viewModelStoreOwner = graphEntry,
                 parameters = { parametersOf(title) }
             )
             DomesticDetailScreen(
+                title = title,
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onPlay = { url, title, episodes ->
@@ -110,8 +112,10 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
             val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: ""
 
             // 同样绑定到整个 graph 作用域
-            val graphEntry = remember(backStackEntry) { navController.getBackStackEntry(DomesticRoutes.graph) }
-            val detailViewModel: DomesticDetailViewModel = koinViewModel(viewModelStoreOwner = graphEntry)
+            val graphEntry =
+                remember(backStackEntry) { navController.getBackStackEntry(DomesticRoutes.graph) }
+            val detailViewModel: DomesticDetailViewModel =
+                koinViewModel(viewModelStoreOwner = graphEntry)
             val episodes by detailViewModel.episodesCache.collectAsState()
 
             DomesticPlayerScreen(

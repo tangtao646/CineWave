@@ -90,6 +90,7 @@ fun NavGraphBuilder.filmGraph(
             )
 
             FilmDetailScreen(
+                movieId = movieId,
                 viewModel = viewModel,
                 onBackClick = { navController.popBackStack() },
                 onNavigateToPlayer = { url, title, _ ->

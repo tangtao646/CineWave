@@ -38,11 +38,4 @@ val filmModuleJvm = module {
     viewModelOf(::FilmSearchViewModel)
     viewModelOf(::FilmDetailViewModel)
 
-    // FilmDetailViewModel 需要 movieId 参数，由各平台通过 parametersOf 传入
-//    viewModel { params ->
-//        FilmDetailViewModel(
-//            repository = get(),
-//            movieId = params.get(),
-//        )
-//    }
 }

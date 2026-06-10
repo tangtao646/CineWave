@@ -38,16 +38,22 @@ import com.example.kmp_demo.features.film.domain.model.MovieDetail
 import com.example.kmp_demo.features.film.domain.model.VideoSource
 import com.example.kmp_demo.features.film.ui.components.MovieDetailSkeleton
 import com.example.kmp_demo.LocalScaffoldPadding
+import com.example.kmp_demo.features.domestic.ui.DomesticDetailContract
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
 fun FilmDetailScreen(
+    movieId: Int,
     onBackClick: () -> Unit,
     onNavigateToPlayer: (url: String, title: String, episodes: List<EpisodeInfo>) -> Unit,
     viewModel: FilmDetailViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(movieId) {
+        viewModel.sendIntent(FilmDetailContract.Intent.Init(movieId))
+    }
 
     LaunchedEffect(Unit) {
         viewModel.uiEffect.collect { effect ->

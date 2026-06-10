@@ -255,6 +255,7 @@ fun App() {
                                                 parameters = { parametersOf(desktopRoute.movieId) }
                                             )
                                             FilmDetailScreen(
+                                                movieId = desktopRoute.movieId,
                                                 viewModel = viewModel,
                                                 onBackClick = { backStack.removeLast() },
                                                 onNavigateToPlayer = { url, title, episodes ->
@@ -306,6 +307,7 @@ fun App() {
                                                 parameters = { parametersOf(desktopRoute.title) }
                                             )
                                             DomesticDetailScreen(
+                                                title = desktopRoute.title,
                                                 viewModel = viewModel,
                                                 onBack = { backStack.removeLast() },
                                                 onPlay = { url, title, episodes ->
