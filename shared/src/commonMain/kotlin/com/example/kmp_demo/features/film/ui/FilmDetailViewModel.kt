@@ -83,12 +83,8 @@ class FilmDetailViewModel(
             source = source,
             videoSources = currentState.videoSources,
             title = currentState.movie?.title ?: "",
-            navigateEffect = { url, title, episodes ->
-                FilmDetailContract.Effect.NavigateToPlayer(url, title, episodes)
-            },
-            toastEffect = { message ->
-                FilmDetailContract.Effect.ShowToast(message)
-            }
+            navigateEffect = FilmDetailContract.Effect::NavigateToPlayer,
+            toastEffect = FilmDetailContract.Effect::ShowToast
         )
     }
 

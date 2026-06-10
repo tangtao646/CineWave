@@ -115,12 +115,8 @@ class DomesticDetailViewModel(
             source = source,
             videoSources = currentState.videoSources,
             title = currentState.media?.title ?: currentMediaTitle,
-            navigateEffect = { url, title, episodes ->
-                DomesticDetailContract.Effect.NavigateToPlayer(url, title, episodes)
-            },
-            toastEffect = { message ->
-                DomesticDetailContract.Effect.ShowToast(message)
-            }
+            navigateEffect = DomesticDetailContract.Effect::NavigateToPlayer,
+            toastEffect = DomesticDetailContract.Effect::ShowToast
         )
     }
 }
