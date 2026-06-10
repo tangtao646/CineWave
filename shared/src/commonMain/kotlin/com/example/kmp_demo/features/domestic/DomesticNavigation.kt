@@ -76,11 +76,15 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
             route = DomesticRoutes.detail,
             arguments = listOf(navArgument("title") { type = NavType.StringType })
         ) { entry ->
-            // 从 NavBackStackEntry 提取 title，通过 parametersOf 传入 ViewModel
-            //val args = entry.arguments ?: return@composable
-            //val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: return@composable
+            val args = entry.arguments ?: return@composable
+            val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: return@composable
+
+            //  绑定到整个 graph 作用域
+            val graphEntry = remember(entry) { navController.getBackStackEntry(DomesticRoutes.graph) }
+            // 首次创建，通过 parametersOf 把 title 喂给 Koin 闭包
             val viewModel: DomesticDetailViewModel = koinViewModel(
-//                parameters = { parametersOf(title) }
+                viewModelStoreOwner = graphEntry,
+                parameters = { parametersOf(title) }
             )
             DomesticDetailScreen(
                 viewModel = viewModel,
@@ -92,24 +96,6 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
             )
         }
 
-        // 旧播放器页（保留兼容，无选集功能）
-        composable(
-            route = DomesticRoutes.player,
-            arguments = listOf(
-                navArgument("url") { type = NavType.StringType },
-                navArgument("title") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val args = backStackEntry.arguments ?: return@composable
-            val url = NavType.StringType[args, "url"]?.decodeNavParam() ?: ""
-            val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: ""
-            DomesticPlayerScreen(
-                initialUrl = url,
-                seriesTitle = title,
-                episodes = emptyList(), // 旧路由无剧集列表，退化为单集播放
-                onBack = { navController.popBackStack() }
-            )
-        }
 
         // 新播放器页（支持沉浸式选集）
         composable(
@@ -120,20 +106,13 @@ fun NavGraphBuilder.domesticGraph(navController: NavHostController) {
             )
         ) { backStackEntry ->
             val args = backStackEntry.arguments!!
-            val url = NavType.StringType.get(args, "url")?.decodeNavParam() ?: ""
-            val title = NavType.StringType.get(args, "title")?.decodeNavParam() ?: ""
+            val url = NavType.StringType[args, "url"]?.decodeNavParam() ?: ""
+            val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: ""
 
-            // 通过共享 ViewModel 获取剧集列表
-            // 详情页和播放器页在同一个导航图内，koinViewModel() 默认按 NavBackStackEntry 作用域，
-            // 这里使用 navController.previousBackStackEntry 获取父级 ViewModel
-            val parentEntry = remember(backStackEntry) {
-                navController.previousBackStackEntry
-            }
-            val detailViewModel: DomesticDetailViewModel? = parentEntry?.let {
-                koinViewModel(viewModelStoreOwner = it)
-            }
-            val episodes by detailViewModel?.episodesCache?.collectAsState()
-                ?: remember { mutableStateOf(emptyList()) }
+            // 同样绑定到整个 graph 作用域
+            val graphEntry = remember(backStackEntry) { navController.getBackStackEntry(DomesticRoutes.graph) }
+            val detailViewModel: DomesticDetailViewModel = koinViewModel(viewModelStoreOwner = graphEntry)
+            val episodes by detailViewModel.episodesCache.collectAsState()
 
             DomesticPlayerScreen(
                 initialUrl = url,

@@ -2,6 +2,7 @@ package com.example.kmp_demo.di
 
 import androidx.lifecycle.SavedStateHandle
 import com.example.kmp_demo.features.domestic.ui.DomesticDetailViewModel
+import com.example.kmp_demo.features.film.ui.FilmDetailViewModel
 import com.example.kmp_demo.features.radio.domain.player.IRadioPlayerController
 import com.example.kmp_demo.features.radio.player.Media3PlayerController
 import org.koin.android.ext.koin.androidContext
@@ -19,18 +20,35 @@ val androidAppModule: Module = module {
         Media3PlayerController(androidContext())
     }
 
-    viewModel {
+    viewModel { params ->
         // 1. 从 Koin 的注入上下文中拿到 Android 平台特有的 SavedStateHandle
         val savedStateHandle: SavedStateHandle = get()
 
         // 2. 从 handle 中安全地提取出传递过来的参数 "title"
-        val title = savedStateHandle.get<String>("title")
-            ?: throw IllegalArgumentException("title is required from SavedStateHandle")
+        val title = params.getOrNull<String>() ?: savedStateHandle.get<String>("title")
+        ?: throw IllegalArgumentException("title is required from SavedStateHandle")
 
+        savedStateHandle["title"] = title
         // 3. 实例化你的共享层 ViewModel，只把 title 塞给它
         DomesticDetailViewModel(
             repository = get(), // 自动从 Koin 容器中寻找 DomesticRepository 实例
             mediaTitle = title  // 注入解耦后的纯 String 参数
+        )
+    }
+
+    viewModel { params ->
+        // 1. 从 Koin 的注入上下文中拿到 Android 平台特有的 SavedStateHandle
+        val savedStateHandle: SavedStateHandle = get()
+
+        // 2. 从 handle 中安全地提取出传递过来的参数 "movieId"
+        val movieId = params.getOrNull<Int>() ?: savedStateHandle.get<Int>("movieId")
+        ?: throw IllegalArgumentException("movieId is required from SavedStateHandle")
+
+        savedStateHandle["movieId"] = movieId
+        // 3. 实例化你的共享层 ViewModel，只把 movieId 塞给它
+        FilmDetailViewModel(
+            repository = get(), // 自动从 Koin 容器中寻找 DomesticRepository 实例
+            movieId = movieId
         )
     }
 }

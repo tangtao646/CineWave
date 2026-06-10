@@ -129,40 +129,6 @@ choco install vlc
 ./gradlew :desktopApp:createDistributable
 ```
 
-## CI/CD
-
-使用 GitHub Actions 自动构建，支持三个独立 workflow：
-
-| Workflow | 触发方式 | 产物 |
-|----------|----------|------|
-| `android.yaml` | 手动 / `compose.yaml` 调度 | APK (debug) + AAB (release) |
-| `desktop-macos.yaml` | 手动 / `compose.yaml` 调度 | DMG 安装包 |
-| `desktop-windows.yaml` | 手动 / `compose.yaml` 调度 | EXE 安装包 |
-| `compose.yaml` | 手动（可选平台） | 一键调度上述三个 workflow |
-
-### GitHub Secrets 配置
-
-在仓库 Settings → Secrets and variables → Actions 中配置：
-
-| Secret | 说明 |
-|--------|------|
-| `DB_JSON` | 站点配置 JSON 的 Base64 编码 |
-| `TMDB_API_KEY` | TMDB API 密钥 |
-
-CI 流程会在构建前将 Secrets 写入 `composeResources/files/` 目录，与本地开发保持一致的读取路径。
-
-## 架构说明
-
-### 密钥管理
-
-API 密钥和敏感配置不硬编码在代码中，而是通过 Compose Resources 的文件资源机制注入：
-
-- **本地开发**：手动创建文件到 `composeResources/files/`
-- **CI/CD**：GitHub Secrets → 写入文件 → 编译打包
-- **运行时**：`Res.readBytes()` 统一读取，跨平台无差异
-
-这种设计避免了 `expect/actual` 的平台分化，也无需引入额外的环境变量解析库。
-
 ### 视频播放
 
 - **Android**：基于 Media3 (ExoPlayer)，支持本地缓存代理

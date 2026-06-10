@@ -12,6 +12,8 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.navArgument
 import com.example.kmp_demo.core.navigation.decodeNavParam
 import com.example.kmp_demo.core.navigation.encodeNavParam
+import com.example.kmp_demo.features.domestic.DomesticRoutes
+import com.example.kmp_demo.features.domestic.ui.DomesticDetailViewModel
 import com.example.kmp_demo.features.film.ui.FilmDetailScreen
 import com.example.kmp_demo.features.film.ui.FilmDetailViewModel
 import com.example.kmp_demo.features.film.ui.FilmHomeScreen
@@ -19,6 +21,7 @@ import com.example.kmp_demo.features.film.ui.player.FilmPlayerScreen
 import com.example.kmp_demo.features.film.ui.search.FilmSearchScreen
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
+import java.util.Map.entry
 
 /**
  * 电影板块路由协议
@@ -74,10 +77,18 @@ fun NavGraphBuilder.filmGraph(
         ) { backStackEntry ->
             // 从 NavBackStackEntry 提取 movieId，通过 parametersOf 传入 ViewModel
             val args = backStackEntry.arguments ?: return@composable
-            val movieId = NavType.IntType.get(args, "movieId")
+            val movieId = NavType.IntType[args, "movieId"] ?: -1
+//
+
+            //  绑定到整个 graph 作用域
+            val graphEntry =
+                remember(backStackEntry) { navController.getBackStackEntry(FilmRoutes.graph) }
+            // 首次创建，通过 parametersOf 把 title 喂给 Koin 闭包
             val viewModel: FilmDetailViewModel = koinViewModel(
+                viewModelStoreOwner = graphEntry,
                 parameters = { parametersOf(movieId) }
             )
+
             FilmDetailScreen(
                 viewModel = viewModel,
                 onBackClick = { navController.popBackStack() },
@@ -95,23 +106,16 @@ fun NavGraphBuilder.filmGraph(
             )
         ) { backStackEntry ->
             val args = backStackEntry.arguments ?: return@composable
-            val encodedUrl = NavType.StringType[args, "url"] ?: ""
-            val encodedTitle = NavType.StringType[args, "title"] ?: ""
+            val url = NavType.StringType[args, "url"]?.decodeNavParam() ?: ""
+            val title = NavType.StringType[args, "title"]?.decodeNavParam() ?: ""
 
-            val url = encodedUrl.decodeNavParam()
-            val title = encodedTitle.decodeNavParam()
 
-            // 通过共享 ViewModel 获取剧集列表
-            // 详情页和播放器页在同一个导航图内，koinViewModel() 默认按 NavBackStackEntry 作用域，
-            // 这里使用 navController.previousBackStackEntry 获取父级 ViewModel
-            val parentEntry = remember(backStackEntry) {
-                navController.previousBackStackEntry
-            }
-            val detailViewModel: FilmDetailViewModel? = parentEntry?.let {
-                koinViewModel(viewModelStoreOwner = it)
-            }
-            val episodes by detailViewModel?.episodesCache?.collectAsState()
-                ?: remember { mutableStateOf(emptyList()) }
+            val graphEntry =
+                remember(backStackEntry) { navController.getBackStackEntry(FilmRoutes.graph) }
+            val detailViewModel: FilmDetailViewModel =
+                koinViewModel(viewModelStoreOwner = graphEntry)
+            val episodes by detailViewModel.episodesCache.collectAsState()
+
 
             FilmPlayerScreen(
                 initialUrl = url,
