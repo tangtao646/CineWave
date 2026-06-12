@@ -6,9 +6,13 @@ import com.example.kmp_demo.core.videosource.VideoSourceSite
 import com.example.kmp_demo.core.videosource.VideoSourceSiteConfigProvider
 import com.example.kmp_demo.core.videosource.VideoSourceSiteLoader
 import io.ktor.client.HttpClient
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -36,72 +40,65 @@ class DomesticApi(
         private val TARGET_SITE_KEYS = setOf("ffzy", "bfzy", "lzi", "dbzy", "dyttzy")
     }
 
-
+    /**
+     * 提取通用的 HTTP 配置。
+     */
+    private fun HttpRequestBuilder.applyCommonConfig() {
+        commonHeaders()
+        userAgent()
+        parameter("out", "json")
+    }
 
     /**
      * 发现所有活跃站点中可用的分类（type_name → 各站点的 type_id 映射）。
      *
-     * 对每个活跃站点调用 ac=list（不带 t 参数），收集返回的 type_id/type_name 对，
-     * 按 type_name 去重合并，返回所有可用的分类名称列表。
+     * 并行请求所有活跃站点。
      */
-    suspend fun discoverTypes(): List<String> {
+    suspend fun discoverTypes(): List<String> = coroutineScope {
         val sites = loadActiveSites()
-        if (sites.isEmpty()) return emptyList()
+        if (sites.isEmpty()) return@coroutineScope emptyList()
 
-        val allTypeNames = mutableSetOf<String>()
-        for (site in sites) {
-            try {
-                val body = httpClient.get(site.api) {
-                    parameter("ac", "list")
-                    parameter("pg", 1)
-                    parameter("h", 24)
-                    parameter("out", "json")
-                    commonHeaders()
-                    userAgent()
-                }.bodyAsText()
-                val response = json.decodeFromString<DomesticListResponse>(body)
-                response.list?.forEach { item ->
-                    item.typeName?.let { allTypeNames.add(it) }
+        sites.map { site ->
+            async {
+                try {
+                    val body = httpClient.get(site.api) {
+                        parameter("ac", "list")
+                        parameter("pg", 1)
+                        parameter("h", 24)
+                        applyCommonConfig()
+                    }.bodyAsText()
+                    val response = json.decodeFromString<DomesticListResponse>(body)
+                    response.list?.mapNotNull { it.typeName } ?: emptyList()
+                } catch (_: Exception) {
+                    emptyList()
                 }
-            } catch (_: Exception) {
-                // 单个站点失败不影响其他站点
             }
-        }
-        return allTypeNames.toList().sorted()
+        }.awaitAll().flatten().distinct().sorted()
     }
-
 
     /**
      * 获取最近更新的影视列表（含封面图），支持按分类筛选。
      *
-     * 遍历所有活跃站点，对每个站点：
-     * 1. 调用 ac=list（带 t 参数筛选分类）获取 ID 列表
-     * 2. 调用 ac=detail&ids=... 批量获取详情（含封面）
-     * 最后按标题去重合并。
-     *
-     * @param page 页码
-     * @param hours 最近多少小时内的更新
-     * @param typeName 可选分类名称（如"国产剧"、"综艺"），null 表示全部
-     * @return 去重合并后的影片详情列表
+     * 并行请求所有活跃站点。
      */
     suspend fun getRecentMedia(
         page: Int = 1,
         hours: Int = 24,
         typeName: String? = null,
-    ): List<DomesticApiItem> {
+    ): List<DomesticApiItem> = coroutineScope {
         val sites = loadActiveSites()
-        if (sites.isEmpty()) return emptyList()
+        if (sites.isEmpty()) return@coroutineScope emptyList()
 
-        val allItems = mutableListOf<DomesticApiItem>()
-        for (site in sites) {
-            try {
-                val items = fetchSiteRecentMedia(site, page, hours, typeName)
-                allItems.addAll(items)
-            } catch (_: Exception) {
-                // 单个站点失败不影响其他站点
+        val deferredResults = sites.map { site ->
+            async {
+                try {
+                    fetchSiteRecentMedia(site, page, hours, typeName)
+                } catch (_: Exception) {
+                    emptyList()
+                }
             }
         }
-        return deduplicate(allItems)
+        deduplicate(deferredResults.awaitAll().flatten())
     }
 
     /**
@@ -120,10 +117,7 @@ class DomesticApi(
             parameter("ac", "list")
             parameter("pg", page)
             parameter("h", hours)
-            parameter("out", "json")
-            commonHeaders()
-            userAgent()
-            // 如果指定了分类，先发现该站点对应的 type_id
+            applyCommonConfig()
             if (typeName != null) {
                 val typeId = resolveTypeIdForSite(site, typeName)
                 if (typeId != null) {
@@ -141,9 +135,7 @@ class DomesticApi(
         val detailBody = httpClient.get(baseUrl) {
             parameter("ac", "detail")
             parameter("ids", batchIds)
-            parameter("out", "json")
-            commonHeaders()
-            userAgent()
+            applyCommonConfig()
         }.bodyAsText()
         val detailResponse = json.decodeFromString<DomesticDetailResponse>(detailBody)
 
@@ -152,7 +144,6 @@ class DomesticApi(
 
     /**
      * 解析某个站点上指定分类名称对应的 type_id。
-     * 通过调用 ac=list（不带 t）来发现该站点的 type_id/type_name 映射。
      */
     private suspend fun resolveTypeIdForSite(site: VideoSourceSite, typeName: String): Int? {
         return try {
@@ -160,9 +151,7 @@ class DomesticApi(
                 parameter("ac", "list")
                 parameter("pg", 1)
                 parameter("h", 24)
-                parameter("out", "json")
-                commonHeaders()
-                userAgent()
+                applyCommonConfig()
             }.bodyAsText()
             val response = json.decodeFromString<DomesticListResponse>(body)
             response.list
@@ -175,33 +164,28 @@ class DomesticApi(
 
     /**
      * 搜索影视内容。
-     *
-     * @param keyword 搜索关键词
-     * @param page 页码
-     * @return 搜索结果列表
      */
-    suspend fun search(keyword: String, page: Int = 1): List<DomesticApiItem> {
+    suspend fun search(keyword: String, page: Int = 1): List<DomesticApiItem> = coroutineScope {
         val sites = loadActiveSites()
-        if (sites.isEmpty()) return emptyList()
+        if (sites.isEmpty()) return@coroutineScope emptyList()
 
-        val allItems = mutableListOf<DomesticApiItem>()
-        for (site in sites) {
-            try {
-                val body = httpClient.get(site.api) {
-                    parameter("ac", "detail")
-                    parameter("wd", keyword)
-                    parameter("pg", page)
-                    parameter("out", "json")
-                    commonHeaders()
-                    userAgent()
-                }.bodyAsText()
-                val response = json.decodeFromString<DomesticDetailResponse>(body)
-                response.list?.let { allItems.addAll(it) }
-            } catch (_: Exception) {
-                // 单个站点失败不影响其他站点
+        val deferredResults = sites.map { site ->
+            async {
+                try {
+                    val body = httpClient.get(site.api) {
+                        parameter("ac", "detail")
+                        parameter("wd", keyword)
+                        parameter("pg", page)
+                        applyCommonConfig()
+                    }.bodyAsText()
+                    val response = json.decodeFromString<DomesticDetailResponse>(body)
+                    response.list ?: emptyList()
+                } catch (_: Exception) {
+                    emptyList()
+                }
             }
         }
-        return deduplicate(allItems)
+        deduplicate(deferredResults.awaitAll().flatten())
     }
 
 
@@ -219,42 +203,36 @@ class DomesticApi(
     /**
      * 搜索影视内容，找到第一个标题匹配的条目即返回。
      *
-     * 与 [search] 不同，此方法在遍历站点时一旦找到名称匹配的条目就立即返回，
-     * 避免遍历所有站点，从而加快元数据加载速度。
-     * 用于详情页分阶段加载中的 Phase 1（快速展示基本信息）。
-     *
-     * @param keyword 搜索关键词
-     * @return 第一个标题匹配的条目及其来源站点 base URL，未找到则返回 null
+     * 并行请求所有活跃站点，返回第一个匹配的结果。
      */
-    suspend fun searchFirstMatch(keyword: String): SearchMatchResult? {
+    suspend fun searchFirstMatch(keyword: String): SearchMatchResult? = coroutineScope {
         val sites = loadActiveSites()
-        if (sites.isEmpty()) return null
+        if (sites.isEmpty()) return@coroutineScope null
 
-        for (site in sites) {
-            try {
-                val body = httpClient.get(site.api) {
-                    parameter("ac", "detail")
-                    parameter("wd", keyword)
-                    parameter("pg", 1)
-                    parameter("out", "json")
-                    commonHeaders()
-                    userAgent()
-                }.bodyAsText()
-                val response = json.decodeFromString<DomesticDetailResponse>(body)
-                val match = response.list?.firstOrNull { item ->
-                    item.name.contains(keyword, ignoreCase = true) ||
-                            keyword.contains(item.name, ignoreCase = true)
+        val deferredResults = sites.map { site ->
+            async {
+                try {
+                    val body = httpClient.get(site.api) {
+                        parameter("ac", "detail")
+                        parameter("wd", keyword)
+                        parameter("pg", 1)
+                        applyCommonConfig()
+                    }.bodyAsText()
+                    val response = json.decodeFromString<DomesticDetailResponse>(body)
+                    val match = response.list?.firstOrNull { item ->
+                        item.name.contains(keyword, ignoreCase = true) ||
+                                keyword.contains(item.name, ignoreCase = true)
+                    }
+                    match?.let {
+                        SearchMatchResult(item = it, siteBaseUrl = extractBaseUrl(site.api))
+                    }
+                } catch (_: Exception) {
+                    null
                 }
-                if (match != null) {
-                    // 从 site.api 提取 base URL（去掉路径部分）
-                    val baseUrl = extractBaseUrl(site.api)
-                    return SearchMatchResult(item = match, siteBaseUrl = baseUrl)
-                }
-            } catch (_: Exception) {
-                // 单个站点失败不影响其他站点
             }
         }
-        return null
+        // 等待所有请求完成，返回第一个非空结果
+        deferredResults.awaitAll().filterNotNull().firstOrNull()
     }
 
     /**

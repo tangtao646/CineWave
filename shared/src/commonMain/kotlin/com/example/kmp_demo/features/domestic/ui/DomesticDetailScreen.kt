@@ -93,7 +93,7 @@ fun DomesticDetailScreen(
                         media = media,
                         videoSources = uiState.videoSources,
                         isSniffing = uiState.isSniffing,
-                        onPlayClick = { viewModel.onPlay(it) },
+                        onPlayClick = { viewModel.sendIntent(DomesticDetailContract.Intent.Play(it)) },
                     )
                 }
             }

@@ -14,6 +14,10 @@ import com.example.kmp_demo.features.domestic.domain.model.DomesticMediaType
 class DomesticSearchEngine(
     private val searchEngine: VideoSourceSearchEngine,
 ) {
+    companion object {
+        private val EPISODE_PATTERN = Regex("第\\d+集")
+    }
+
     /** 搜索并映射为 DomesticMedia 列表 */
     suspend fun search(keyword: String): List<DomesticMedia> {
         val sources = searchEngine.search(keyword)
@@ -46,9 +50,8 @@ class DomesticSearchEngine(
     private fun extractTitleKey(source: VideoSource): String {
         // 尝试从 quality 中提取剧集名（去掉 "第X集" 部分）
         val quality = source.quality
-        val episodePattern = Regex("第\\d+集")
-        return if (episodePattern.containsMatchIn(quality)) {
-            quality.replace(episodePattern, "").trim()
+        return if (EPISODE_PATTERN.containsMatchIn(quality)) {
+            quality.replace(EPISODE_PATTERN, "").trim()
         } else {
             quality
         }

@@ -31,6 +31,7 @@ class DomesticDetailContract {
     sealed class Intent : IUiIntent {
         data class Init(val title: String) : Intent()
         data object Retry : Intent()
+        data class Play(val source: VideoSource) : Intent()
     }
 
     sealed class Effect : IUiEffect {
@@ -72,6 +73,7 @@ class DomesticDetailViewModel(
         when (intent) {
             is DomesticDetailContract.Intent.Init -> handleInit(intent.title)
             DomesticDetailContract.Intent.Retry -> loadDetail(currentMediaTitle)
+            is DomesticDetailContract.Intent.Play -> handlePlay(intent.source)
         }
     }
 
@@ -110,7 +112,7 @@ class DomesticDetailViewModel(
         }
     }
 
-    fun onPlay(source: VideoSource) {
+    private fun handlePlay(source: VideoSource) {
         preparePlayback(
             source = source,
             videoSources = currentState.videoSources,
