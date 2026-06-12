@@ -9,6 +9,7 @@ import com.example.kmp_demo.core.BaseMviViewModel
 import com.example.kmp_demo.core.IUiEffect
 import com.example.kmp_demo.core.IUiIntent
 import com.example.kmp_demo.core.IUiState
+import com.example.kmp_demo.core.PageStatus
 import com.example.kmp_demo.core.security.SensitiveWordFilter
 import com.example.kmp_demo.features.film.domain.model.Movie
 import com.example.kmp_demo.features.film.domain.repository.FilmRepository
@@ -51,7 +52,7 @@ class FilmSearchViewModel(
         .distinctUntilChanged()
         .filter { it.isNotBlank() }
         .flatMapLatest { query ->
-            // 🌟 本地敏感词前置拦截：命中则返回空 PagingData
+            //  本地敏感词前置拦截：命中则返回空 PagingData
             if (sensitiveWordFilter.containsSensitiveWord(query)) {
                 updateState { copy(isBlocked = true) }
                 flowOf(PagingData.empty())
@@ -67,6 +68,7 @@ class FilmSearchViewModel(
             is FilmSearchContract.Intent.UpdateQuery -> {
                 updateState { copy(query = intent.query, isBlocked = false) }
             }
+
             FilmSearchContract.Intent.ClearQuery -> {
                 updateState { copy(query = "", isBlocked = false) }
             }

@@ -36,7 +36,7 @@ fun FilmSearchScreen(
     val uiState by viewModel.uiState.collectAsState()
     val searchResults = viewModel.searchResults.collectAsLazyPagingItems()
     val focusRequester = remember { FocusRequester() }
-    val pageStatus = searchResults.rememberPageStatus()
+    val pageStatus = searchResults.rememberPageStatus(currentQuery = uiState.query)
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
