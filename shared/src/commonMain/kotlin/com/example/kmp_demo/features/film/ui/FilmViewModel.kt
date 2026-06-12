@@ -35,28 +35,33 @@ class FilmContract {
     sealed class Effect : IUiEffect
 }
 
+/**
+ * 电影首页 ViewModel。
+ *
+ * 采用响应式设计，Paging 数据流根据 [uiState] 中的分类和排序动态切换。
+ */
 class FilmViewModel(
     private val repository: FilmRepository
 ) : BaseMviViewModel<FilmContract.State, FilmContract.Intent, FilmContract.Effect>(
     initialState = FilmContract.State()
 ) {
 
-    private val _selectedGenreId = MutableStateFlow<String?>(null)
-    private val _sortOrder = MutableStateFlow(MovieSortOrder.VOTE_AVERAGE_DESC)
-
     /**
-     * Paging 数据流响应分类切换和排序切换
+     * Paging 数据流响应分类切换和排序切换。
+     * 衍生自 uiState，确保单一真相源。
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val movies: Flow<PagingData<Movie>> = combine(_selectedGenreId, _sortOrder) { genreId, sort ->
-        if (genreId == null) {
-            repository.getPopularMovies()
-        } else {
-            repository.getMoviesByGenre(genreId, sort)
+    val movies: Flow<PagingData<Movie>> = uiState
+        .map { it.selectedGenreId to it.sortOrder }
+        .distinctUntilChanged()
+        .flatMapLatest { (genreId, sort) ->
+            if (genreId == null) {
+                repository.getPopularMovies()
+            } else {
+                repository.getMoviesByGenre(genreId, sort)
+            }
         }
-    }
-    .flatMapLatest { it }
-    .cachedIn(viewModelScope)
+        .cachedIn(viewModelScope)
 
     init {
         fetchGenres()
@@ -65,16 +70,14 @@ class FilmViewModel(
     override fun sendIntent(intent: FilmContract.Intent) {
         when (intent) {
             is FilmContract.Intent.Refresh -> {
-                // Paging 刷新通常由 UI 层调用 movies.refresh()
+                // Paging 刷新通常由 UI 层直接调用 movies.refresh()
             }
 
             is FilmContract.Intent.SelectGenre -> {
-                _selectedGenreId.value = intent.genreId
                 updateState { copy(selectedGenreId = intent.genreId) }
             }
 
             is FilmContract.Intent.SelectSortOrder -> {
-                _sortOrder.value = intent.sortOrder
                 updateState { copy(sortOrder = intent.sortOrder) }
             }
         }

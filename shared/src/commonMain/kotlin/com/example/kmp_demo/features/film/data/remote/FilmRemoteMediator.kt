@@ -31,6 +31,5 @@ data class FilmRemoteFetchResult(
     override val entities: List<MovieEntity>,
     override val isEndOfPagination: Boolean
 ) : IRemoteFetchResult<MovieEntity> {
-    override fun computeNextKey(page: Int, pageSize: Int): Int =
-        page + (entities.size.coerceAtLeast(pageSize))
+    override fun computeNextKey(page: Int, pageSize: Int): Int = page + 1
 }

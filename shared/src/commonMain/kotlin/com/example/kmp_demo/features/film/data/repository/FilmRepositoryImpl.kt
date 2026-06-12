@@ -30,7 +30,7 @@ class FilmRepositoryImpl(
 
     override fun searchMovies(query: String): Flow<PagingData<Movie>> {
         return Pager(
-            config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+            config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
             pagingSourceFactory = { FilmPagingSource(api, "search", query) }
         ).flow
     }
@@ -102,9 +102,13 @@ class FilmRepositoryImpl(
     ): Pager<Int, MovieEntity> {
         val compositeKey = "${type}_$sortOrder"
         return Pager(
-            config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+            config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
             remoteMediator = FilmRemoteMediator(type, sortOrder, localDataSource, fetchRemote),
             pagingSourceFactory = { localDataSource.getPagingSource(compositeKey) }
         )
+    }
+
+    companion object {
+        private const val PAGE_SIZE = 20
     }
 }
