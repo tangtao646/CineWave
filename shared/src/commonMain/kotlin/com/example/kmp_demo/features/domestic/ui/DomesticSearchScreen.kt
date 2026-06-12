@@ -47,7 +47,7 @@ fun DomesticSearchScreen(
                 title = {
                     TextField(
                         value = uiState.query,
-                        onValueChange = { viewModel.updateQuery(it) },
+                        onValueChange = { viewModel.sendIntent(DomesticSearchContract.Intent.UpdateQuery(it)) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(focusRequester),
@@ -61,7 +61,7 @@ fun DomesticSearchScreen(
                         ),
                         trailingIcon = {
                             if (uiState.query.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.clearQuery() }) {
+                                IconButton(onClick = { viewModel.sendIntent(DomesticSearchContract.Intent.ClearQuery) }) {
                                     Icon(Icons.Default.Close, contentDescription = "清除")
                                 }
                             }
