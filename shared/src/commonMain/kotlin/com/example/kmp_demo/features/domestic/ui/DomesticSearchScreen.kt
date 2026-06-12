@@ -2,6 +2,7 @@ package com.example.kmp_demo.features.domestic.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -14,7 +15,12 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.paging.LoadState
+import androidx.paging.compose.collectAsLazyPagingItems
+import com.example.kmp_demo.core.components.PageContainer
 import com.example.kmp_demo.core.components.gridColumns
+import com.example.kmp_demo.core.components.rememberPageStatus
+import com.example.kmp_demo.core.components.safeContent
 import com.example.kmp_demo.features.domestic.domain.model.DomesticMedia
 import com.example.kmp_demo.features.domestic.ui.components.DomesticMediaCard
 import org.koin.compose.viewmodel.koinViewModel
@@ -22,10 +28,10 @@ import org.koin.compose.viewmodel.koinViewModel
 /**
  * 国内影视搜索页。
  *
- * 布局向 FilmSearchScreen 看齐：
- * - 顶部搜索栏（自动聚焦，支持清除）
- * - 搜索结果瀑布流网格
- * - 空状态提示
+ * 布局全面向 FilmSearchScreen 看齐：
+ * - 引入 Paging 3 处理搜索结果
+ * - 使用 PageContainer 统一处理加载/错误状态
+ * - 移除 ViewModel 内部的手动 Loading/Error 维护
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,13 +41,16 @@ fun DomesticSearchScreen(
     viewModel: DomesticSearchViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val searchResults = viewModel.searchResults.collectAsLazyPagingItems()
     val focusRequester = remember { FocusRequester() }
+    val pageStatus = searchResults.rememberPageStatus()
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
 
     Scaffold(
+        modifier = Modifier.safeContent(),
         topBar = {
             TopAppBar(
                 title = {
@@ -83,39 +92,13 @@ fun DomesticSearchScreen(
         ) {
             when {
                 // 初始空状态
-                uiState.query.isBlank() && uiState.results.isEmpty() -> {
+                uiState.query.isBlank() -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             text = "搜索你喜欢的国产剧、动漫、综艺",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                }
-
-                // 加载中
-                uiState.isLoading -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                }
-
-                // 错误状态
-                uiState.error != null -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "搜索失败",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = uiState.error ?: "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
                     }
                 }
 
@@ -130,34 +113,44 @@ fun DomesticSearchScreen(
                     }
                 }
 
-                // 搜索结果为空
-                uiState.results.isEmpty() && uiState.query.isNotBlank() -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "未找到相关资源",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                // 搜索结果
+                // 正常结果流
                 else -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(gridColumns()),
-                        contentPadding = PaddingValues(8.dp),
-                        modifier = Modifier.fillMaxSize()
+                    PageContainer(
+                        pageStatus = pageStatus,
+                        onRetry = { searchResults.retry() }
                     ) {
-                        items(
-                            count = uiState.results.size,
-                            key = { index -> uiState.results[index].id }
-                        ) { index ->
-                            val media = uiState.results[index]
-                            DomesticMediaCard(
-                                media = media,
-                                modifier = Modifier.padding(8.dp),
-                                onClick = { onMediaClick(media) }
-                            )
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(gridColumns()),
+                            contentPadding = PaddingValues(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(
+                                count = searchResults.itemCount,
+                                key = { index ->
+                                    val media = searchResults.peek(index)
+                                    media?.let { "${it.id}_$index" } ?: "placeholder_$index"
+                                }
+                            ) { index ->
+                                searchResults[index]?.let { media ->
+                                    DomesticMediaCard(
+                                        media = media,
+                                        modifier = Modifier.padding(8.dp),
+                                        onClick = { onMediaClick(media) }
+                                    )
+                                }
+                            }
+
+                            // 分页加载态 Footer
+                            if (searchResults.loadState.append is LoadState.Loading) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                                    }
+                                }
+                            }
                         }
                     }
                 }

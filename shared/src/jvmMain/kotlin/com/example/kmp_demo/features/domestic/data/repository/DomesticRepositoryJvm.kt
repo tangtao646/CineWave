@@ -50,6 +50,21 @@ class DomesticRepositoryJvm(
         ).flow
     }
 
+    override fun searchPaging(keyword: String): Flow<PagingData<DomesticMedia>> {
+        return Pager(
+            config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+            pagingSourceFactory = {
+                InMemoryPagingSource { page, _ ->
+                    val results = search(keyword, page)
+                    DomesticJvmFetchResult(
+                        entities = results,
+                        isEndOfPagination = results.isEmpty()
+                    )
+                }
+            }
+        ).flow
+    }
+
     override suspend fun search(keyword: String, page: Int): List<DomesticMedia> {
         val apiResults = domesticApi.search(keyword, page).distinctBy { it.id }
         if (apiResults.isNotEmpty()) {

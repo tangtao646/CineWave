@@ -54,6 +54,30 @@ class DomesticRepositoryImpl(
         }
     }
 
+    override fun searchPaging(keyword: String): Flow<PagingData<DomesticMedia>> {
+        return Pager(
+            config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
+            pagingSourceFactory = {
+                object : androidx.paging.PagingSource<Int, DomesticMedia>() {
+                    override fun getRefreshKey(state: androidx.paging.PagingState<Int, DomesticMedia>): Int? = null
+                    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, DomesticMedia> {
+                        val page = params.key ?: 1
+                        return try {
+                            val results = search(keyword, page)
+                            LoadResult.Page(
+                                data = results,
+                                prevKey = if (page == 1) null else page - 1,
+                                nextKey = if (results.isEmpty()) null else page + 1
+                            )
+                        } catch (e: Exception) {
+                            LoadResult.Error(e)
+                        }
+                    }
+                }
+            }
+        ).flow
+    }
+
     @OptIn(ExperimentalPagingApi::class)
     private fun createPager(typeName: String): Pager<Int, DomesticMediaEntity> {
         return Pager(

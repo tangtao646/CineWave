@@ -27,6 +27,9 @@ interface DomesticRepository {
      */
     fun getRecentMediaPaging(typeName: String = "全部"): Flow<PagingData<DomesticMedia>>
 
+    /** 根据关键词搜索国内影视内容，支持 Paging 分页 */
+    fun searchPaging(keyword: String): Flow<PagingData<DomesticMedia>>
+
     /** 根据关键词搜索国内影视内容 */
     suspend fun search(keyword: String, page: Int = 1): List<DomesticMedia>
 
