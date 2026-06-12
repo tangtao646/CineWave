@@ -27,9 +27,9 @@ class FilmPagingSource(
                 "genre" -> api.getMoviesByGenre(genreId = query ?: "", page = page)
                 else -> api.getPopularMovies(page = page)
             }
-            
-            val movies = response.results.map { it.toMovie() }
-            
+
+            val movies = response.results.map { it.toMovie() }.distinctBy { it.id }
+
             LoadResult.Page(
                 data = movies,
                 prevKey = if (page == 1) null else page - 1,

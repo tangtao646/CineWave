@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -116,7 +117,7 @@ fun FilmHomeScreen(
                             expanded = showSortMenu,
                             onDismissRequest = { showSortMenu = false }
                         ) {
-                            MovieSortOrder.values().forEach { order ->
+                            MovieSortOrder.entries.forEach { order ->
                                 DropdownMenuItem(
                                     text = { Text(order.label) },
                                     onClick = {
@@ -174,7 +175,10 @@ fun FilmHomeScreen(
             ) {
                 items(
                     count = movies.itemCount,
-                    key = movies.itemKey { it.id }
+                    key = { index ->
+                        val movie = movies.peek(index) // peek 不会触发新的分页加载，安全高效
+                        movie?.let { "${it.id}_$index" } ?: "placeholder_$index"
+                    }
                 ) { index ->
                     movies[index]?.let { movie ->
                         MovieCard(

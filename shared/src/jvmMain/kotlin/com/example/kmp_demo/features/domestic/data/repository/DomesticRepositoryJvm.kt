@@ -51,7 +51,7 @@ class DomesticRepositoryJvm(
     }
 
     override suspend fun search(keyword: String, page: Int): List<DomesticMedia> {
-        val apiResults = domesticApi.search(keyword, page)
+        val apiResults = domesticApi.search(keyword, page).distinctBy { it.id }
         if (apiResults.isNotEmpty()) {
             return apiResults.map { it.toDomesticMedia() }
         }

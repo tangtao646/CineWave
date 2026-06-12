@@ -142,7 +142,10 @@ fun DomesticHomeScreen(
             ) {
                 items(
                     count = mediaItems.itemCount,
-                    key = mediaItems.itemKey { it.id }
+                    key = { index ->
+                        val movie = mediaItems.peek(index) // peek 不会触发新的分页加载，安全高效
+                        movie?.let { "${it.id}_$index" } ?: "placeholder_$index"
+                    }
                 ) { index ->
                     mediaItems[index]?.let { media ->
                         DomesticMediaCard(

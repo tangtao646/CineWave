@@ -76,7 +76,8 @@ class DomesticRepositoryImpl(
         pageSize: Int,
     ): DomesticRemoteFetchResult {
         val typeParam = if (typeName == "全部") null else typeName
-        val items = domesticApi.getRecentMedia(page = page, typeName = typeParam)
+        val items =
+            domesticApi.getRecentMedia(page = page, typeName = typeParam).distinctBy { it.id }
         val entities = items.mapIndexed { index, item ->
             item.toEntity(
                 typeName = typeName,
@@ -91,7 +92,7 @@ class DomesticRepositoryImpl(
 
     override suspend fun search(keyword: String, page: Int): List<DomesticMedia> {
         // 优先使用 DomesticApi 搜索（带封面）
-        val apiResults = domesticApi.search(keyword, page)
+        val apiResults = domesticApi.search(keyword, page).distinctBy { it.id }
         if (apiResults.isNotEmpty()) {
             return apiResults.map { it.toDomesticMedia() }
         }
@@ -139,6 +140,6 @@ class DomesticRepositoryImpl(
     }
 
     companion object {
-        private const val PAGE_SIZE = 20
+        private const val PAGE_SIZE = 10
     }
 }

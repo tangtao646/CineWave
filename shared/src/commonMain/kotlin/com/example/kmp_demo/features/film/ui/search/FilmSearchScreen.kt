@@ -118,7 +118,10 @@ fun FilmSearchScreen(
                     ) {
                         items(
                             count = searchResults.itemCount,
-                            key = searchResults.itemKey { it.id }
+                            key = { index ->
+                                val movie = searchResults.peek(index) // peek 不会触发新的分页加载，安全高效
+                                movie?.let { "${it.id}_$index" } ?: "placeholder_$index"
+                            }
                         ) { index ->
                             searchResults[index]?.let { movie ->
                                 MovieCard(
