@@ -17,7 +17,8 @@ fun MovieDto.toMovie(): Movie = Movie(
     backdropUrl = backdropPath?.let { "${FilmApi.IMAGE_BASE_URL}$it" },
     voteAverage = voteAverage,
     releaseDate = releaseDate ?: "",
-    genreIds = genreIds
+    genreIds = genreIds,
+    isAdult = adult
 )
 
 fun MovieDto.toEntity(type: String): MovieEntity = MovieEntity(
@@ -28,7 +29,8 @@ fun MovieDto.toEntity(type: String): MovieEntity = MovieEntity(
     backdropUrl = backdropPath?.let { "${FilmApi.IMAGE_BASE_URL}$it" },
     voteAverage = voteAverage,
     releaseDate = releaseDate ?: "",
-    type = type
+    type = type,
+    isAdult = adult
 )
 
 fun MovieEntity.toMovie(): Movie = Movie(
@@ -38,7 +40,8 @@ fun MovieEntity.toMovie(): Movie = Movie(
     posterUrl = posterUrl,
     backdropUrl = backdropUrl,
     voteAverage = voteAverage,
-    releaseDate = releaseDate
+    releaseDate = releaseDate,
+    isAdult = isAdult
 )
 
 fun MovieDetailDto.toMovieDetail(): MovieDetail = MovieDetail(
@@ -52,7 +55,8 @@ fun MovieDetailDto.toMovieDetail(): MovieDetail = MovieDetail(
     genres = genres.map { it.name },
     runtime = runtime ?: 0,
     tagline = tagline,
-    cast = credits?.cast?.map { it.toCastMember() } ?: emptyList()
+    cast = credits?.cast?.map { it.toCastMember() } ?: emptyList(),
+    isAdult = adult
 )
 
 fun CastDto.toCastMember(): CastMember = CastMember(

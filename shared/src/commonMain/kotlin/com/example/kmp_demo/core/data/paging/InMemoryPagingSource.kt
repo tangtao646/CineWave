@@ -5,10 +5,9 @@ import androidx.paging.PagingState
 import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
 
 /**
- * JVM 平台的内存分页数据源。
+ * 通用的内存分页数据源。
  *
- * 使用 [IRemoteFetchResult] 抽象分页计算逻辑，与 commonMain 的 RemoteMediator 保持一致。
- * 每个 feature 通过实现 [IRemoteFetchResult] 来定义自己的分页策略（nextKey 计算、结束判断等）。
+ * 使用 [IRemoteFetchResult] 抽象分页计算逻辑，支持各平台无数据库缓存的分页场景。
  *
  * @param T 数据类型
  * @param fetchPage 分页加载函数，返回 [IRemoteFetchResult] 以统一分页计算逻辑
@@ -38,4 +37,14 @@ class InMemoryPagingSource<T : Any>(
             LoadResult.Error(e)
         }
     }
+}
+
+/**
+ * 简单的分页结果实现，适用于大多数基于页码（Page-based）的 API。
+ */
+data class SimpleFetchResult<T : Any>(
+    override val entities: List<T>,
+    override val isEndOfPagination: Boolean
+) : IRemoteFetchResult<T> {
+    override fun computeNextKey(page: Int, pageSize: Int): Int = page + 1
 }

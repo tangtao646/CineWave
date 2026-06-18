@@ -15,7 +15,8 @@ data class Movie(
     val backdropUrl: String?,
     val voteAverage: Double,
     val releaseDate: String,
-    val genreIds: List<Int> = emptyList()
+    val genreIds: List<Int> = emptyList(),
+    val isAdult: Boolean = false
 ){
     private val roundedValue = (voteAverage * 10).roundToInt() / 10.0
     val voteAverageTxt = roundedValue.toString()
@@ -32,7 +33,8 @@ data class MovieDetail(
     val genres: List<String>,
     val runtime: Int,
     val tagline: String?,
-    val cast: List<CastMember> = emptyList()
+    val cast: List<CastMember> = emptyList(),
+    val isAdult: Boolean = false
 )
 
 data class CastMember(

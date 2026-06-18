@@ -10,11 +10,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FilmDao {
-    @Query("SELECT * FROM movies ORDER BY popularity DESC")
-    fun getAllMovies(): Flow<List<MovieEntity>>
-
-    @Query("SELECT * FROM movies WHERE id = :id")
-    suspend fun getMovieById(id: Int): MovieEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMovies(movies: List<MovieEntity>)
@@ -28,7 +23,7 @@ interface FilmDao {
     @Query("SELECT * FROM movies WHERE isFavorite = 1")
     fun getFavoriteMovies(): Flow<List<MovieEntity>>
 
-    @Query("SELECT * FROM movies WHERE type = :type ORDER BY orderIndex ASC")
+    @Query("SELECT * FROM movies WHERE type = :type AND isAdult = 0 ORDER BY orderIndex ASC")
     fun getMoviesPagingSource(type: String): PagingSource<Int, MovieEntity>
 
     @Query("DELETE FROM movies WHERE type = :type")

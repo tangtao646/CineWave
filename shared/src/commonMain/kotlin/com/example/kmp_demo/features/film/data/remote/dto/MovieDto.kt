@@ -42,7 +42,8 @@ data class MovieDetailDto(
     @SerialName("genres") val genres: List<GenreDto>,
     @SerialName("runtime") val runtime: Int?,
     @SerialName("tagline") val tagline: String?,
-    @SerialName("credits") val credits: CreditsDto?
+    @SerialName("credits") val credits: CreditsDto?,
+    @SerialName("adult") val adult: Boolean = false,
 )
 
 @Serializable

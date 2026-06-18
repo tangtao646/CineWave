@@ -4,9 +4,8 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import com.example.kmp_demo.core.data.paging.InMemoryPagingSource
-import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
+import com.example.kmp_demo.core.data.paging.SimpleFetchResult
 import com.example.kmp_demo.features.film.data.remote.FilmApi
-import com.example.kmp_demo.features.film.data.remote.FilmPagingSource
 import com.example.kmp_demo.features.film.data.remote.SnifferDataSource
 import com.example.kmp_demo.features.film.data.remote.dto.GenreDto
 import com.example.kmp_demo.features.film.data.remote.mapper.toMovie
@@ -21,12 +20,8 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Desktop 版 FilmRepository — 无 Room 缓存。
  *
- * 热门/分类浏览使用 [Pager] + [InMemoryPagingSource]，
- * 搜索使用 [FilmPagingSource]（它本身不依赖 Room）。
- *
- * 与 Android 版 [FilmRepositoryImpl] 的区别：
- * - Android: Room + RemoteMediator 驱动分页
- * - Desktop: InMemoryPagingSource 驱动分页，无缓存
+ * 统一使用通用的 [InMemoryPagingSource] 驱动分页，移除了逻辑冗余的 FilmPagingSource。
+ * 与 Android 版的区别在于其直接使用 API 数据而不经过 Room 本地缓存。
  */
 class FilmRepositoryJvm(
     private val api: FilmApi,
@@ -35,14 +30,17 @@ class FilmRepositoryJvm(
 
     override fun getPopularMovies(): Flow<PagingData<Movie>> {
         return Pager(
-            config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+            config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
             pagingSourceFactory = {
-                InMemoryPagingSource { page, pageSize ->
+                InMemoryPagingSource { page, _ ->
                     val response = api.getPopularMovies(page = page)
-                    val entities = response.results.map { it.toMovie() }
-                    FilmJvmFetchResult(
+                    val entities = response.results
+                        .map { it.toMovie() }
+                        .distinctBy { it.id }
+                        .filter { !it.isAdult }
+                    SimpleFetchResult(
                         entities = entities,
-                        isEndOfPagination = entities.isEmpty() || page >= response.totalPages
+                        isEndOfPagination = page >= response.totalPages || response.results.isEmpty()
                     )
                 }
             }
@@ -51,8 +49,20 @@ class FilmRepositoryJvm(
 
     override fun searchMovies(query: String): Flow<PagingData<Movie>> {
         return Pager(
-            config = PagingConfig(pageSize = 20, enablePlaceholders = false),
-            pagingSourceFactory = { FilmPagingSource(api, "search", query) }
+            config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
+            pagingSourceFactory = {
+                InMemoryPagingSource { page, _ ->
+                    val response = api.searchMovies(query = query, page = page)
+                    val entities = response.results
+                        .map { it.toMovie() }
+                        .distinctBy { it.id }
+                        .filter { !it.isAdult }
+                    SimpleFetchResult(
+                        entities = entities,
+                        isEndOfPagination = page >= response.totalPages || response.results.isEmpty()
+                    )
+                }
+            }
         ).flow
     }
 
@@ -61,18 +71,21 @@ class FilmRepositoryJvm(
         sortOrder: MovieSortOrder
     ): Flow<PagingData<Movie>> {
         return Pager(
-            config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+            config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
             pagingSourceFactory = {
-                InMemoryPagingSource { page, pageSize ->
+                InMemoryPagingSource { page, _ ->
                     val response = api.getMoviesByGenre(
                         genreId = genreId,
                         page = page,
                         sortBy = sortOrder.value
                     )
-                    val entities = response.results.map { it.toMovie() }
-                    FilmJvmFetchResult(
+                    val entities = response.results
+                        .map { it.toMovie() }
+                        .distinctBy { it.id }
+                        .filter { !it.isAdult }
+                    SimpleFetchResult(
                         entities = entities,
-                        isEndOfPagination = entities.isEmpty() || page >= response.totalPages
+                        isEndOfPagination = page >= response.totalPages || response.results.isEmpty()
                     )
                 }
             }
@@ -100,19 +113,8 @@ class FilmRepositoryJvm(
     override suspend fun searchVideoSources(title: String): List<VideoSource> {
         return snifferDataSource.searchSources(title)
     }
-}
 
-/**
- * Film 模块 JVM 平台的分页结果。
- *
- * 与 commonMain 中的 [com.example.kmp_demo.features.film.data.remote.FilmRemoteFetchResult] 保持相同的分页计算逻辑：
- * - nextKey = page + entities.size（按实际返回数量推进）
- * - isEndOfPagination = 数据为空或已到最后一页
- */
-private data class FilmJvmFetchResult(
-    override val entities: List<Movie>,
-    override val isEndOfPagination: Boolean
-) : IRemoteFetchResult<Movie> {
-    override fun computeNextKey(page: Int, pageSize: Int): Int =
-        page + (entities.size.coerceAtLeast(pageSize))
+    companion object {
+        private const val PAGE_SIZE = 20
+    }
 }

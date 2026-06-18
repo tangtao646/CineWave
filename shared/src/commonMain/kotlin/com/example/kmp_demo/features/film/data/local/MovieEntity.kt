@@ -17,4 +17,5 @@ data class MovieEntity(
     val genreIds: String = "", // JSON array as string
     val popularity: Double = 0.0,
     val isFavorite: Boolean = false,
+    val isAdult: Boolean = false
 )

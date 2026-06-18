@@ -1,13 +1,15 @@
 package com.example.kmp_demo.features.film.data.repository
 
-import androidx.paging.*
-import com.example.kmp_demo.core.data.remote.BasePagingRemoteMediator
-import com.example.kmp_demo.core.data.remote.IRemoteFetchResult
+import androidx.paging.ExperimentalPagingApi
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.map
+import com.example.kmp_demo.core.data.paging.InMemoryPagingSource
+import com.example.kmp_demo.core.data.paging.SimpleFetchResult
 import com.example.kmp_demo.features.film.data.local.FilmLocalDataSource
 import com.example.kmp_demo.features.film.data.local.MovieEntity
 import com.example.kmp_demo.features.film.data.remote.FilmApi
-import com.example.kmp_demo.features.film.data.remote.FilmPagingSource
-import com.example.kmp_demo.features.film.data.remote.FilmRemoteFetchResult
 import com.example.kmp_demo.features.film.data.remote.FilmRemoteMediator
 import com.example.kmp_demo.features.film.data.remote.SnifferDataSource
 import com.example.kmp_demo.features.film.data.remote.dto.GenreDto
@@ -31,7 +33,16 @@ class FilmRepositoryImpl(
     override fun searchMovies(query: String): Flow<PagingData<Movie>> {
         return Pager(
             config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
-            pagingSourceFactory = { FilmPagingSource(api, "search", query) }
+            pagingSourceFactory = {
+                InMemoryPagingSource { page, _ ->
+                    val response = api.searchMovies(query, page)
+                    val entities = response.results.map { it.toMovie() }.distinctBy { it.id }
+                    SimpleFetchResult(
+                        entities = entities,
+                        isEndOfPagination = page >= response.totalPages || response.results.isEmpty()
+                    )
+                }
+            }
         ).flow
     }
 
@@ -66,7 +77,7 @@ class FilmRepositoryImpl(
                     page = page,
                 )
                 val entities = response.results.map { it.toEntity("popular_") }
-                FilmRemoteFetchResult(
+                SimpleFetchResult(
                     entities,
                     entities.isEmpty() || page >= response.totalPages
                 )
@@ -86,7 +97,7 @@ class FilmRepositoryImpl(
                 val response =
                     api.getMoviesByGenre(genreId = genreId, page = page, sortBy = sortOrder.value)
                 val entities = response.results.map { it.toEntity("${type}_${sortOrder.value}") }
-                FilmRemoteFetchResult(
+                SimpleFetchResult(
                     entities,
                     entities.isEmpty() || page >= response.totalPages
                 )
@@ -98,7 +109,7 @@ class FilmRepositoryImpl(
     private fun createPager(
         type: String,
         sortOrder: String,
-        fetchRemote: suspend (Int) -> FilmRemoteFetchResult
+        fetchRemote: suspend (Int) -> SimpleFetchResult<MovieEntity>
     ): Pager<Int, MovieEntity> {
         val compositeKey = "${type}_$sortOrder"
         return Pager(
