@@ -3,30 +3,44 @@ package com.example.kmp_demo.features.domestic.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
-import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
-import androidx.paging.compose.itemKey
-import com.example.kmp_demo.LocalScaffoldPadding
 import com.example.kmp_demo.core.components.PageContainer
+import com.example.kmp_demo.core.components.gridColumns
+import com.example.kmp_demo.core.components.pagingFooter
 import com.example.kmp_demo.core.components.rememberPageStatus
 import com.example.kmp_demo.core.components.safeContent
-import com.example.kmp_demo.features.domestic.domain.model.DomesticMedia
-import com.example.kmp_demo.core.components.gridColumns
 import com.example.kmp_demo.core.components.skeletonCount
+import com.example.kmp_demo.features.domestic.domain.model.DomesticMedia
 import com.example.kmp_demo.features.domestic.ui.components.DomesticMediaCard
 import com.example.kmp_demo.features.domestic.ui.components.DomesticSkeletonItem
 import org.koin.compose.viewmodel.koinViewModel
@@ -156,34 +170,8 @@ fun DomesticHomeScreen(
                     }
                 }
 
-                // 加载更多指示器
-                if (mediaItems.loadState.append is LoadState.Loading) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                        }
-                    }
-                }
-
-                // 加载更多失败 — 重试按钮
-                if (mediaItems.loadState.append is LoadState.Error) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        val error = (mediaItems.loadState.append as LoadState.Error).error
-                        TextButton(
-                            onClick = { mediaItems.retry() },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp)
-                        ) {
-                            Text("加载失败，点击重试: ${error.message}")
-                        }
-                    }
-                }
+                // 分页加载态 Footer (包含加载中、错误重试、到底提示)
+                pagingFooter(mediaItems)
             }
         }
     }

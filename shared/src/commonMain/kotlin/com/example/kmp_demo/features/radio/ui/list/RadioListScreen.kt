@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -51,11 +50,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
-import com.example.kmp_demo.features.radio.ui.components.SearchBarPlaceholder
-import com.example.kmp_demo.features.radio.ui.components.StationItem
 import com.example.kmp_demo.core.components.PageContainer
+import com.example.kmp_demo.core.components.pagingFooter
 import com.example.kmp_demo.core.components.rememberPageStatus
 import com.example.kmp_demo.core.components.shimmer
+import com.example.kmp_demo.features.radio.ui.components.SearchBarPlaceholder
+import com.example.kmp_demo.features.radio.ui.components.StationItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -220,18 +220,7 @@ fun RadioListScreen(
                         }
 
                         // 处理加载更多 (Footer)
-                        if (stations.loadState.append is LoadState.Loading) {
-                            item {
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                                }
-                            }
-                        }
+                        pagingFooter(stations)
                     }
                 }
             }

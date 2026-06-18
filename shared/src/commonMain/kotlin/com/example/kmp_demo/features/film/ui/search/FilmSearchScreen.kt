@@ -18,10 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
-import com.example.kmp_demo.core.components.PageContainer
-import com.example.kmp_demo.core.components.gridColumns
-import com.example.kmp_demo.core.components.rememberPageStatus
-import com.example.kmp_demo.core.components.safeContent
+import com.example.kmp_demo.core.components.*
 import com.example.kmp_demo.features.film.ui.components.MovieCard
 import org.koin.compose.viewmodel.koinViewModel
 import kotlin.collections.get
@@ -133,16 +130,7 @@ fun FilmSearchScreen(
                         }
 
                         // 分页加载态 Footer
-                        if (searchResults.loadState.append is LoadState.Loading) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                                }
-                            }
-                        }
+                        pagingFooter(searchResults)
                     }
                 }
             }
