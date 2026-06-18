@@ -58,22 +58,26 @@ class DomesticApi(
         val sites = loadActiveSites()
         if (sites.isEmpty()) return@coroutineScope emptyList()
 
-        sites.map { site ->
+        val deferredResults = sites.map { site ->
             async {
-                try {
-                    val body = httpClient.get(site.api) {
-                        parameter("ac", "list")
-                        parameter("pg", 1)
-                        parameter("h", 24)
-                        applyCommonConfig()
-                    }.bodyAsText()
-                    val response = json.decodeFromString<DomesticListResponse>(body)
-                    response.list?.mapNotNull { it.typeName } ?: emptyList()
-                } catch (_: Exception) {
-                    emptyList()
-                }
+                val body = httpClient.get(site.api) {
+                    parameter("ac", "list")
+                    parameter("pg", 1)
+                    parameter("h", 24)
+                    applyCommonConfig()
+                }.bodyAsText()
+                val response = json.decodeFromString<DomesticListResponse>(body)
+                response.list?.mapNotNull { it.typeName } ?: emptyList()
             }
-        }.awaitAll().flatten().distinct().sorted()
+        }
+
+        val results = deferredResults.map { runCatching { it.await() } }
+        val successes = results.mapNotNull { it.getOrNull() }
+        val failures = results.mapNotNull { it.exceptionOrNull() }
+
+        if (successes.isEmpty() && failures.isNotEmpty()) throw failures.first()
+
+        successes.flatten().distinct().sorted()
     }
 
     /**
@@ -81,6 +85,8 @@ class DomesticApi(
      *
      * 并行请求所有活跃站点。
      */
+    // DomesticApi.kt
+
     suspend fun getRecentMedia(
         page: Int = 1,
         hours: Int = 24,
@@ -91,14 +97,25 @@ class DomesticApi(
 
         val deferredResults = sites.map { site ->
             async {
-                try {
-                    fetchSiteRecentMedia(site, page, hours, typeName)
-                } catch (_: Exception) {
-                    emptyList()
-                }
+                // 这里不再内部消化异常
+                fetchSiteRecentMedia(site, page, hours, typeName)
             }
         }
-        deduplicate(deferredResults.awaitAll().flatten())
+
+        // 使用 runCatching 收集所有结果
+        val results = deferredResults.map { runCatching { it.await() } }
+
+        val successes = results.mapNotNull { it.getOrNull() }
+        val failures = results.mapNotNull { it.exceptionOrNull() }
+
+        // 关键逻辑：
+        // 如果一个成功的都没有，且存在失败（比如断网），则抛出第一个异常
+        if (successes.isEmpty() && failures.isNotEmpty()) {
+            throw failures.first()
+        }
+
+        // 只要有任何一站成功，就合并并去重返回
+        deduplicate(successes.flatten())
     }
 
     /**
@@ -171,21 +188,24 @@ class DomesticApi(
 
         val deferredResults = sites.map { site ->
             async {
-                try {
-                    val body = httpClient.get(site.api) {
-                        parameter("ac", "detail")
-                        parameter("wd", keyword)
-                        parameter("pg", page)
-                        applyCommonConfig()
-                    }.bodyAsText()
-                    val response = json.decodeFromString<DomesticDetailResponse>(body)
-                    response.list ?: emptyList()
-                } catch (_: Exception) {
-                    emptyList()
-                }
+                val body = httpClient.get(site.api) {
+                    parameter("ac", "detail")
+                    parameter("wd", keyword)
+                    parameter("pg", page)
+                    applyCommonConfig()
+                }.bodyAsText()
+                val response = json.decodeFromString<DomesticDetailResponse>(body)
+                response.list ?: emptyList()
             }
         }
-        deduplicate(deferredResults.awaitAll().flatten())
+
+        val results = deferredResults.map { runCatching { it.await() } }
+        val successes = results.mapNotNull { it.getOrNull() }
+        val failures = results.mapNotNull { it.exceptionOrNull() }
+
+        if (successes.isEmpty() && failures.isNotEmpty()) throw failures.first()
+
+        deduplicate(successes.flatten())
     }
 
 
@@ -211,28 +231,30 @@ class DomesticApi(
 
         val deferredResults = sites.map { site ->
             async {
-                try {
-                    val body = httpClient.get(site.api) {
-                        parameter("ac", "detail")
-                        parameter("wd", keyword)
-                        parameter("pg", 1)
-                        applyCommonConfig()
-                    }.bodyAsText()
-                    val response = json.decodeFromString<DomesticDetailResponse>(body)
-                    val match = response.list?.firstOrNull { item ->
-                        item.name.contains(keyword, ignoreCase = true) ||
-                                keyword.contains(item.name, ignoreCase = true)
-                    }
-                    match?.let {
-                        SearchMatchResult(item = it, siteBaseUrl = extractBaseUrl(site.api))
-                    }
-                } catch (_: Exception) {
-                    null
+                val body = httpClient.get(site.api) {
+                    parameter("ac", "detail")
+                    parameter("wd", keyword)
+                    parameter("pg", 1)
+                    applyCommonConfig()
+                }.bodyAsText()
+                val response = json.decodeFromString<DomesticDetailResponse>(body)
+                val match = response.list?.firstOrNull { item ->
+                    item.name.contains(keyword, ignoreCase = true) ||
+                            keyword.contains(item.name, ignoreCase = true)
+                }
+                match?.let {
+                    SearchMatchResult(item = it, siteBaseUrl = extractBaseUrl(site.api))
                 }
             }
         }
-        // 等待所有请求完成，返回第一个非空结果
-        deferredResults.awaitAll().filterNotNull().firstOrNull()
+
+        val results = deferredResults.map { runCatching { it.await() } }
+        val successes = results.mapNotNull { it.getOrNull() }
+        val failures = results.mapNotNull { it.exceptionOrNull() }
+
+        if (successes.isEmpty() && failures.isNotEmpty()) throw failures.first()
+
+        successes.firstOrNull()
     }
 
     /**
