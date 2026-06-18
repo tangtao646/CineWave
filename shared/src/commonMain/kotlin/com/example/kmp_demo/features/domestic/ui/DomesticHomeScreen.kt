@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.collectAsLazyPagingItems
+import com.example.kmp_demo.LocalScaffoldPadding
 import com.example.kmp_demo.core.components.PageContainer
 import com.example.kmp_demo.core.components.gridColumns
 import com.example.kmp_demo.core.components.pagingFooter
@@ -143,7 +144,12 @@ fun DomesticHomeScreen(
             loadingContent = {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(gridColumns()),
-                    contentPadding = PaddingValues(8.dp)
+                    contentPadding = PaddingValues(
+                        start = 8.dp,
+                        top = 8.dp,
+                        end = 8.dp,
+                        bottom = paddingValues.calculateBottomPadding() + LocalScaffoldPadding.current.calculateBottomPadding()
+                    )
                 ) {
                     items(skeletonCount()) { DomesticSkeletonItem() }
                 }
@@ -151,7 +157,12 @@ fun DomesticHomeScreen(
         ) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(gridColumns()),
-                contentPadding = PaddingValues(8.dp),
+                contentPadding = PaddingValues(
+                    start = 8.dp,
+                    top = 8.dp,
+                    end = 8.dp,
+                    bottom = paddingValues.calculateBottomPadding() + LocalScaffoldPadding.current.calculateBottomPadding()
+                ),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(
