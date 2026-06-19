@@ -11,7 +11,9 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -50,11 +52,14 @@ class DomesticApi(
      */
     private val siteCategoryCache = mutableMapOf<String, Map<String, Int>>()
 
+    private val cacheMutex = Mutex()
+
     /**
-     * 限定使用的站点 key 列表（仅这 5 个站点，避免遍历全部 33 个）。
+     * 限定使用的站点 key 列表（仅这几个站点，避免遍历全部 33 个）。
      */
     companion object {
-        private val TARGET_SITE_KEYS = setOf("ffzy", "bfzy", "lzi", "dbzy", "dyttzy","zy360","maotaizy","dbzy","yinghua","aqyzy")
+        private val TARGET_SITE_KEYS =
+            setOf("ffzy", "bfzy", "lzi", "dbzy", "dyttzy", "zy360", "aqyzy", "wujin", "maotaizy")
     }
 
     /**
@@ -83,10 +88,10 @@ class DomesticApi(
                     parameter("ac", "list")
                     applyCommonConfig()
                 }.bodyAsText()
-                
+
                 val response = json.decodeFromString<DomesticListResponse>(body)
                 val categoryNames = response.categories?.map { it.name } ?: emptyList()
-                
+
                 if (categoryNames.isNotEmpty()) {
                     return categoryNames.sorted()
                 }
@@ -102,38 +107,32 @@ class DomesticApi(
     /**
      * 获取最近更新的影视列表（含封面图），支持按分类筛选。
      *
-     * 并行请求所有活跃站点。
+     * 并行请求所有活跃站点，采用 SupervisorScope 隔离单个站点故障。
      */
-    // DomesticApi.kt
-
     suspend fun getRecentMedia(
         page: Int = 1,
         hours: Int = 24,
         typeName: String? = null,
-    ): List<DomesticApiItem> = coroutineScope {
+    ): List<DomesticApiItem> = supervisorScope {
         val sites = loadActiveSites()
-        if (sites.isEmpty()) return@coroutineScope emptyList()
+        if (sites.isEmpty()) return@supervisorScope emptyList()
 
         val deferredResults = sites.map { site ->
             async {
-                // 这里不再内部消化异常
                 fetchSiteRecentMedia(site, page, hours, typeName)
             }
         }
 
-        // 使用 runCatching 收集所有结果
+        // 使用 runCatching 收集所有结果，避免单个站点崩溃导致整体取消
         val results = deferredResults.map { runCatching { it.await() } }
 
         val successes = results.mapNotNull { it.getOrNull() }
-        val failures = results.mapNotNull { it.exceptionOrNull() }
 
-        // 关键逻辑：
-        // 如果一个成功的都没有，且存在失败（比如断网），则抛出第一个异常
-        if (successes.isEmpty() && failures.isNotEmpty()) {
-            throw failures.first()
+        // 如果全部请求都失败了，才抛出第一个错误
+        if (successes.isEmpty() && results.any { it.isFailure }) {
+            throw results.first { it.isFailure }.exceptionOrNull()!!
         }
 
-        // 只要有任何一站成功，就合并并去重返回
         deduplicate(successes.flatten())
     }
 
@@ -184,25 +183,25 @@ class DomesticApi(
      * 采用了动态映射 + 内存缓存策略。
      */
     private suspend fun resolveTypeIdForSite(site: VideoSourceSite, typeName: String): Int? {
-        // 1. 尝试从内存缓存中获取该站点的所有映射
-        val cachedMap = siteCategoryCache[site.key]
+        // 使用锁保护内存缓存的读写
+        val cachedMap = cacheMutex.withLock { siteCategoryCache[site.key] }
         if (cachedMap != null) {
             return cachedMap[typeName]
         }
 
-        // 2. 缓存未命中，请求该站点的分类定义
         return try {
             val body = httpClient.get(site.api) {
                 parameter("ac", "list")
                 applyCommonConfig()
             }.bodyAsText()
             val response = json.decodeFromString<DomesticListResponse>(body)
-            
+
             val categories = response.categories ?: emptyList()
             if (categories.isNotEmpty()) {
-                // 3. 将该站点的全量分类存入缓存，下次无需请求
                 val newMap = categories.associate { it.name to it.id }
-                siteCategoryCache[site.key] = newMap
+                cacheMutex.withLock {
+                    siteCategoryCache[site.key] = newMap
+                }
                 newMap[typeName]
             } else {
                 null
@@ -215,66 +214,75 @@ class DomesticApi(
 
     /**
      * 搜索影视内容。
+     * 
+     * 采用两步策略以确保兼容所有资源站：
+     * 1. ac=list&wd=... 获取列表
+     * 2. ac=detail&ids=... 获取详情
      */
-    suspend fun search(keyword: String, page: Int = 1): List<DomesticApiItem> = coroutineScope {
+    suspend fun search(keyword: String, page: Int = 1): List<DomesticApiItem> = supervisorScope {
         val sites = loadActiveSites()
-        if (sites.isEmpty()) return@coroutineScope emptyList()
+        if (sites.isEmpty()) return@supervisorScope emptyList()
 
         val deferredResults = sites.map { site ->
             async {
-                val body = httpClient.get(site.api) {
-                    parameter("ac", "detail")
-                    parameter("wd", keyword)
-                    parameter("pg", page)
-                    applyCommonConfig()
-                }.bodyAsText()
-                val response = json.decodeFromString<DomesticDetailResponse>(body)
-                response.list ?: emptyList()
+                fetchSiteSearchMedia(site, keyword, page)
             }
         }
 
         val results = deferredResults.map { runCatching { it.await() } }
         val successes = results.mapNotNull { it.getOrNull() }
-        val failures = results.mapNotNull { it.exceptionOrNull() }
 
-        if (successes.isEmpty() && failures.isNotEmpty()) throw failures.first()
+        // 只有当所有请求都失败（Result.failure）且没有任何成功返回时才抛错
+        if (successes.isEmpty() && results.any { it.isFailure }) {
+            throw results.first { it.isFailure }.exceptionOrNull()!!
+        }
 
         deduplicate(successes.flatten())
     }
 
-
     /**
-     * 搜索结果，包含匹配的条目和来源站点的 base URL。
-     *
-     * 用于在 [searchFirstMatch] 中同时返回匹配的站点信息，
-     * 以便调用方拼接相对路径的封面图 URL。
+     * 从单个站点执行两步搜索。
      */
-    data class SearchMatchResult(
-        val item: DomesticApiItem,
-        val siteBaseUrl: String,
-    )
+    private suspend fun fetchSiteSearchMedia(
+        site: VideoSourceSite,
+        keyword: String,
+        page: Int
+    ): List<DomesticApiItem> {
+        // 1. 搜索列表获取 IDs
+        val listBody = httpClient.get(site.api) {
+            parameter("ac", "list")
+            parameter("wd", keyword)
+            parameter("pg", page)
+            applyCommonConfig()
+        }.bodyAsText()
+        val listResponse = json.decodeFromString<DomesticListResponse>(listBody)
+        val ids = listResponse.list?.map { it.vodId }?.joinToString(",") ?: return emptyList()
+        if (ids.isBlank()) return emptyList()
+
+        // 2. 获取详情
+        val detailBody = httpClient.get(site.api) {
+            parameter("ac", "detail")
+            parameter("ids", ids)
+            applyCommonConfig()
+        }.bodyAsText()
+        val detailResponse = json.decodeFromString<DomesticDetailResponse>(detailBody)
+        return detailResponse.list ?: emptyList()
+    }
 
     /**
      * 搜索影视内容，找到第一个标题匹配的条目即返回。
-     *
-     * 并行请求所有活跃站点，返回第一个匹配的结果。
      */
-    suspend fun searchFirstMatch(keyword: String): SearchMatchResult? = coroutineScope {
+    suspend fun searchFirstMatch(keyword: String): SearchMatchResult? = supervisorScope {
         val sites = loadActiveSites()
-        if (sites.isEmpty()) return@coroutineScope null
+        if (sites.isEmpty()) return@supervisorScope null
 
         val deferredResults = sites.map { site ->
             async {
-                val body = httpClient.get(site.api) {
-                    parameter("ac", "detail")
-                    parameter("wd", keyword)
-                    parameter("pg", 1)
-                    applyCommonConfig()
-                }.bodyAsText()
-                val response = json.decodeFromString<DomesticDetailResponse>(body)
-                val match = response.list?.firstOrNull { item ->
-                    item.name.contains(keyword, ignoreCase = true) ||
-                            keyword.contains(item.name, ignoreCase = true)
+                // 搜索第一页即可
+                val items = fetchSiteSearchMedia(site, keyword, 1)
+                val match = items.firstOrNull { item ->
+                    item.name.equals(keyword, ignoreCase = true) ||
+                            item.name.contains(keyword, ignoreCase = true)
                 }
                 match?.let {
                     SearchMatchResult(item = it, siteBaseUrl = extractBaseUrl(site.api))
@@ -283,13 +291,26 @@ class DomesticApi(
         }
 
         val results = deferredResults.map { runCatching { it.await() } }
-        val successes = results.mapNotNull { it.getOrNull() }
-        val failures = results.mapNotNull { it.exceptionOrNull() }
 
-        if (successes.isEmpty() && failures.isNotEmpty()) throw failures.first()
+        // 只要有任何一站返回了非空的 SearchMatchResult，就优先返回它
+        val firstMatch = results.firstNotNullOfOrNull { it.getOrNull() }
+        if (firstMatch != null) return@supervisorScope firstMatch
 
-        successes.firstOrNull()
+        // 如果全部站点都执行失败（抛出异常），则抛出第一个错误
+        if (results.all { it.isFailure }) {
+            throw results.first().exceptionOrNull()!!
+        }
+
+        null
     }
+
+    /**
+     * 搜索结果，包含匹配的条目和来源站点的 base URL。
+     */
+    data class SearchMatchResult(
+        val item: DomesticApiItem,
+        val siteBaseUrl: String,
+    )
 
     /**
      * 从 API URL 中提取 base URL。
@@ -339,7 +360,9 @@ class DomesticApi(
  */
 @OptIn(ExperimentalSerializationApi::class)
 object AnyToIntSerializer : KSerializer<Int> {
-    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("AnyToInt", PrimitiveKind.INT)
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("AnyToInt", PrimitiveKind.INT)
+
     override fun serialize(encoder: Encoder, value: Int) = encoder.encodeInt(value)
     override fun deserialize(decoder: Decoder): Int {
         val input = decoder as? JsonDecoder ?: return decoder.decodeInt()
@@ -357,10 +380,14 @@ object AnyToIntSerializer : KSerializer<Int> {
  */
 @OptIn(ExperimentalSerializationApi::class)
 object AnyToNullableIntSerializer : KSerializer<Int?> {
-    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("AnyToNullableInt", PrimitiveKind.INT)
-    override fun serialize(encoder: Encoder, value: Int?) = if (value == null) encoder.encodeNull() else encoder.encodeInt(value)
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("AnyToNullableInt", PrimitiveKind.INT)
+
+    override fun serialize(encoder: Encoder, value: Int?) =
+        if (value == null) encoder.encodeNull() else encoder.encodeInt(value)
+
     override fun deserialize(decoder: Decoder): Int? {
-        val input = decoder as? JsonDecoder ?: return decoder.decodeInt()
+        val input = decoder as? JsonDecoder ?: return null
         val element = input.decodeJsonElement()
         if (element is JsonNull) return null
         return if (element is JsonPrimitive) {
