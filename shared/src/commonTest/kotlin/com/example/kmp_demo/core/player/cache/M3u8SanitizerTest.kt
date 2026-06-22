@@ -14,7 +14,7 @@ class M3u8SanitizerTest {
     private val m3u8BaseUrl = "https://vod.example.com/live/playlist.m3u8"
 
     private fun syncSanitize(s: M3u8Sanitizer, content: String, base: String = m3u8BaseUrl): String =
-        runBlocking { s.sanitizeSync(content, base) }
+        runBlocking { s.sanitize(content, base) }
 
     @Test fun `clean m3u8 unchanged`() {
         val input = """

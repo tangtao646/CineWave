@@ -53,6 +53,7 @@ android {
     }
     buildFeatures {
         buildConfig = true
+        aidl = true
     }
     packaging {
         resources {
@@ -61,7 +62,8 @@ android {
     }
     signingConfigs {
         create("release") {
-            val keystoreFileName = project.findProperty("androidKeystoreFile")?.toString() ?: "/Users/tangtao/android_project.jks"
+            val keystoreFileName = project.findProperty("androidKeystoreFile")?.toString()
+                ?: "/Users/tangtao/android_project.jks"
             // 如果是绝对路径直接用 file()，否则用 rootProject.file()（相对于项目根目录）
             storeFile = if (keystoreFileName.startsWith("/")) {
                 file(keystoreFileName)

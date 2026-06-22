@@ -35,7 +35,7 @@ class DomesticRepositoryJvm(
 
     override fun getRecentMediaPaging(typeName: String): Flow<PagingData<DomesticMedia>> {
         return Pager(
-            config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+            config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
             pagingSourceFactory = {
                 InMemoryPagingSource { page, pageSize ->
                     val typeParam = if (typeName == "全部") null else typeName
@@ -52,7 +52,7 @@ class DomesticRepositoryJvm(
 
     override fun searchPaging(keyword: String): Flow<PagingData<DomesticMedia>> {
         return Pager(
-            config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+            config = PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false),
             pagingSourceFactory = {
                 InMemoryPagingSource { page, _ ->
                     val results = search(keyword, page)
@@ -133,6 +133,10 @@ class DomesticRepositoryJvm(
         } else {
             "$baseUrl/$coverUrl"
         }
+    }
+
+    companion object {
+        private const val PAGE_SIZE = 5
     }
 }
 

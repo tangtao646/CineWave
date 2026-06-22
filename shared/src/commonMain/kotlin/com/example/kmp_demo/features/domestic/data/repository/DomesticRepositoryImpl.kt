@@ -164,6 +164,6 @@ class DomesticRepositoryImpl(
     }
 
     companion object {
-        private const val PAGE_SIZE = 10
+        private const val PAGE_SIZE = 5
     }
 }

@@ -27,6 +27,7 @@ fun createHttpClient(): HttpClient {
             connectTimeoutMillis = 15000
             socketTimeoutMillis = 15000
         }
+        expectSuccess = true
     }
 }
 

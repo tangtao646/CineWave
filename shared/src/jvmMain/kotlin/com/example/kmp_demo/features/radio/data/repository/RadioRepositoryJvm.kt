@@ -99,9 +99,9 @@ class RadioRepositoryJvm(
     override fun getFavoriteStations(): Flow<PagingData<RadioStation>> {
         // Desktop 端收藏使用内存存储，返回空分页数据
         return Pager(
-            config = PagingConfig(pageSize = 50, enablePlaceholders = false),
+            config = PagingConfig(pageSize = 30, enablePlaceholders = false),
             pagingSourceFactory = {
-                InMemoryPagingSource<RadioStation> { _, _ ->
+                InMemoryPagingSource { _, _ ->
                     RadioJvmFetchResult(
                         entities = emptyList(),
                         isEndOfPagination = true

@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import com.example.kmp_demo.core.PageStatus
+import com.example.kmp_demo.core.toUserFriendlyMessage
 
 /**
  * 全局统一页面状态容器
@@ -84,7 +85,7 @@ fun DefaultError(message: String?, onRetry: () -> Unit) {
 fun <T : Any> LazyPagingItems<T>.rememberPageStatus(): PageStatus {
     return when (val refresh = loadState.refresh) {
         is LoadState.Loading -> if (itemCount == 0) PageStatus.Loading else PageStatus.Content
-        is LoadState.Error -> if (itemCount == 0) PageStatus.Error(refresh.error.message) else PageStatus.Content
+        is LoadState.Error -> if (itemCount == 0) PageStatus.Error(refresh.error.toUserFriendlyMessage()) else PageStatus.Content
         is LoadState.NotLoading -> if (itemCount == 0) PageStatus.Empty else PageStatus.Content
     }
 }

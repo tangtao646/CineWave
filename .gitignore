@@ -4,6 +4,7 @@
 **/build/
 xcuserdata
 !src/**/build/
+androidApp/src/main/aidl
 local.properties
 .idea
 .DS_Store
@@ -30,4 +31,5 @@ android知识图谱.md
 android_project.jks
 android_app_keystore.jks
 重构计划方案.md
+Android高频面试知识点.md
 .aider*

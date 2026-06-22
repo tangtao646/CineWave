@@ -77,8 +77,7 @@ fun RadioListScreen(
     val playerUiState by viewModel.playerManager.uiState.collectAsState()
     val currentPlayingStation = playerUiState.currentStation
     val isPlaying = playerUiState.isPlaying
-    // 是否有正在播放的电台（用于决定是否在列表底部预留 MiniPlayerBar 的空间）
-    val hasCurrentStation = currentPlayingStation != null
+
 
     var showCountrySheet by remember { mutableStateOf(false) }
 
